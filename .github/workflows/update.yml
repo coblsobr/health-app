@@ -1,0 +1,31 @@
+name: Publish update
+
+# Every push to main ships an over-the-air update to the phone.
+# This replaces JavaScript and assets only — if a push changes native code
+# (a new native module, an SDK bump), the fingerprint runtimeVersion changes
+# and the phone will keep its current build until you install a fresh APK.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - run: npm ci
+
+      - name: Publish to the preview channel
+        run: eas update --branch preview --message "${{ github.event.head_commit.message }}" --non-interactive
