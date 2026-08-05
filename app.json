@@ -1,25 +1,36 @@
 {
   "expo": {
-    "name": "health-app",
+    "name": "Health",
     "slug": "health-app",
-    "version": "1.0.0",
+    "scheme": "healthapp",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "ios": {
-      "supportsTablet": true
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "runtimeVersion": {
+      "policy": "fingerprint"
     },
+    "assetBundlePatterns": ["**/*"],
     "android": {
+      "package": "com.codys.healthapp",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FF5C39"
       },
-      "predictiveBackGestureEnabled": false
+      "edgeToEdgeEnabled": true
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.codys.healthapp"
     },
     "web": {
+      "bundler": "metro",
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": ["expo-router", "expo-font", "expo-updates"],
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }
