@@ -4,9 +4,16 @@ import { useTheme } from '../theme/ThemeProvider';
 
 /* ── text ─────────────────────────────────────────── */
 
-export function H3({ children, style }: { children: React.ReactNode; style?: TextStyle }) {
+/** Shared props for the text helpers — style plus the Text props we actually use. */
+type TextProps = { children: React.ReactNode; style?: TextStyle; numberOfLines?: number };
+
+export function H3({ children, style, numberOfLines }: TextProps) {
   const { c, fonts } = useTheme();
-  return <Text style={[{ fontFamily: fonts.display, fontSize: 15, color: c.ink, letterSpacing: -0.2 }, style]}>{children}</Text>;
+  return (
+    <Text numberOfLines={numberOfLines} style={[{ fontFamily: fonts.display, fontSize: 15, color: c.ink, letterSpacing: -0.2 }, style]}>
+      {children}
+    </Text>
+  );
 }
 
 /** Outfit, tight tracking — for any figure the eye should land on. */
@@ -15,14 +22,22 @@ export function Num({ children, style }: { children: React.ReactNode; style?: Te
   return <Text style={[{ fontFamily: fonts.displayBold, fontSize: 16, color: c.ink, letterSpacing: -0.5 }, style]}>{children}</Text>;
 }
 
-export function Sm({ children, style }: { children: React.ReactNode; style?: TextStyle }) {
+export function Sm({ children, style, numberOfLines }: TextProps) {
   const { c, fonts } = useTheme();
-  return <Text style={[{ fontFamily: fonts.body, fontSize: 11, color: c.inkSoft, lineHeight: 16 }, style]}>{children}</Text>;
+  return (
+    <Text numberOfLines={numberOfLines} style={[{ fontFamily: fonts.body, fontSize: 11, color: c.inkSoft, lineHeight: 16 }, style]}>
+      {children}
+    </Text>
+  );
 }
 
-export function Xs({ children, style }: { children: React.ReactNode; style?: TextStyle }) {
+export function Xs({ children, style, numberOfLines }: TextProps) {
   const { c, fonts } = useTheme();
-  return <Text style={[{ fontFamily: fonts.body, fontSize: 9.5, color: c.inkFaint, lineHeight: 14 }, style]}>{children}</Text>;
+  return (
+    <Text numberOfLines={numberOfLines} style={[{ fontFamily: fonts.body, fontSize: 9.5, color: c.inkFaint, lineHeight: 14 }, style]}>
+      {children}
+    </Text>
+  );
 }
 
 /** Uppercase card heading. */

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +13,7 @@ import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } f
 
 import { ThemeProvider, useTheme } from '../theme/ThemeProvider';
 import { Icon, type IconName } from '../components/Icon';
+import { initDb } from '../lib/db';
 
 /** The three worlds, plus the two pages that hang off the bottom of the drawer. */
 const SECTIONS: { route: string; label: string; icon: IconName }[] = [
@@ -98,9 +99,10 @@ function Root() {
         <Drawer.Screen name="(health)" options={{ title: 'Health' }} />
         <Drawer.Screen name="settings" options={{ title: 'Settings' }} />
         <Drawer.Screen name="account" options={{ title: 'Account & Sync' }} />
-        {/* Reachable from the avatar, not listed in the drawer. */}
+        {/* Reachable from the avatar or by navigation, not listed in the drawer. */}
         <Drawer.Screen name="profile" options={{ drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="index" options={{ drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="recipe" options={{ drawerItemStyle: { display: 'none' }, swipeEnabled: false }} />
       </Drawer>
     </>
   );
@@ -115,6 +117,13 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+
+  // Warm the database, but never block the UI on it. Screens that need storage
+  // surface their own error, so a storage problem costs you those screens
+  // rather than the whole app.
+  useEffect(() => {
+    initDb().catch(() => {});
+  }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
