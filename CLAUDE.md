@@ -73,9 +73,31 @@ update automatically. Needs an `EXPO_TOKEN` repo secret.
 `runtimeVersion` is on the `fingerprint` policy: it hashes the native layer, so
 it changes by itself whenever a new APK is genuinely required.
 
+## Project links
+
+- Repo: https://github.com/coblsobr/health-app
+- EAS project: https://expo.dev/accounts/coblsobr/projects/health-app
+- First APK (v0.1.0, runtime `dda575f1`):
+  https://expo.dev/accounts/coblsobr/projects/health-app/builds/cee0f7af-89e5-4be5-992b-ceb95751bf45
+
+## Gotchas already hit — don't repeat these
+
+- **Icon assets**: SDK 57's template ships `android-icon-foreground/background/
+  monochrome.png`, *not* `adaptive-icon.png`. Pointing at the latter fails the
+  EAS Prebuild phase with an unhelpful "Unknown error."
+- **`edgeToEdgeEnabled` was removed** in SDK 57 — Android 16 makes it mandatory.
+- **`expo-system-ui` is required** for `userInterfaceStyle: automatic`; without
+  it the system dark-mode setting never reaches the app.
+- **Verify config changes with `npx expo prebuild --platform android --no-install
+  --clean` before pushing a build.** It runs the exact phase that fails, in ~20s
+  instead of ~10 min. Delete the generated `android/` afterwards — and note that
+  prebuild rewrites the `android`/`ios` npm scripts to `expo run:*` every time,
+  which needs reverting since we don't build natively.
+
 ## Status
 
 - [x] Phase 0 — shell: three worlds, drawer, tabs, theming. Screens are static.
+      Built, installed, on GitHub, EAS Update wired.
 - [ ] Phase 1 — recipe library (SQLite, CRUD, tags)
 - [ ] Phase 2 — imports (browser grab, link, photo OCR)
 - [ ] Phases 3-11 — see `../HEALTH-APP-PLAN.md`
