@@ -94,10 +94,30 @@ it changes by itself whenever a new APK is genuinely required.
   prebuild rewrites the `android`/`ios` npm scripts to `expo run:*` every time,
   which needs reverting since we don't build natively.
 
+## Storage
+
+`lib/db.ts` owns SQLite. Two conventions applied from the first migration so
+sync and multiple profiles never need a rewrite: **text uuid `id`** on every
+row, and **`user_id` on every table**. Deletes are soft (`deleted_at`) so sync
+can propagate them.
+
+Call the exported functions — they await `ready()` internally, which opens and
+migrates once. Do **not** gate app startup on the database: a storage failure
+should cost you the storage-backed screens, not the whole app.
+
+**expo-sqlite does not work in the web dev server.** It runs as WebAssembly and
+needs SharedArrayBuffer, which requires COOP/COEP headers on the HTML document.
+Expo's dev server applies `metro.config.js` middleware *after* its own, so it
+cannot set headers on the document — an `enhanceMiddleware` hook there looks
+correct and silently does nothing. `ready()` therefore times out after 8s
+rather than hanging forever, and the library screen shows "Storage
+unavailable". **Verify anything storage-backed on the phone, not on web.**
+
 ## Status
 
-- [x] Phase 0 — shell: three worlds, drawer, tabs, theming. Screens are static.
+- [x] Phase 0 — shell: three worlds, drawer, tabs, theming.
       Built, installed, on GitHub, EAS Update wired.
-- [ ] Phase 1 — recipe library (SQLite, CRUD, tags)
+- [x] Phase 1 — recipe library: SQLite, add/view/edit/delete, rating,
+      favourites, photos, search, sort, tags.
 - [ ] Phase 2 — imports (browser grab, link, photo OCR)
 - [ ] Phases 3-11 — see `../HEALTH-APP-PLAN.md`
