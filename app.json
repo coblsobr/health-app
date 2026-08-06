@@ -18,10 +18,11 @@
     "android": {
       "package": "com.codys.healthapp",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png",
         "backgroundColor": "#FF5C39"
-      },
-      "edgeToEdgeEnabled": true
+      }
     },
     "ios": {
       "supportsTablet": true,
