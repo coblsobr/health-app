@@ -169,6 +169,33 @@ async function openAndMigrate() {
       deleted_at   TEXT
     );
 
+    -- What was actually eaten. Nutrition is snapshotted at log time rather
+    -- than joined from the recipe: editing or deleting a recipe must not
+    -- silently rewrite last week's history.
+    CREATE TABLE IF NOT EXISTS diary_entries (
+      id         TEXT PRIMARY KEY NOT NULL,
+      user_id    TEXT NOT NULL DEFAULT 'local',
+      date       TEXT NOT NULL,                     -- YYYY-MM-DD
+      slot       TEXT NOT NULL,
+      recipe_id  TEXT,                              -- kept for linking, may dangle
+      name       TEXT NOT NULL,
+      servings   REAL NOT NULL DEFAULT 1,
+      kcal       REAL, protein_g REAL, carbs_g REAL, fat_g REAL,
+      fiber_g    REAL, sugar_g REAL, sodium_mg REAL,
+      source     TEXT NOT NULL DEFAULT 'quick',     -- recipe | quick | plan
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+
+    -- Small key/value store for preferences that are not worth their own table.
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key        TEXT PRIMARY KEY NOT NULL,
+      value      TEXT,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_diary_date ON diary_entries(user_id, date, deleted_at);
     CREATE INDEX IF NOT EXISTS idx_grocery ON grocery_items(user_id, deleted_at);
     CREATE INDEX IF NOT EXISTS idx_plan_date  ON meal_plan_entries(user_id, date, deleted_at);
     CREATE INDEX IF NOT EXISTS idx_plan_batch ON meal_plan_entries(batch_id);
@@ -574,4 +601,104 @@ export async function getIngredientsFor(
     if (row.raw_text) entry.lines.push(row.raw_text);
   }
   return out;
+}
+
+/* ── diary ──────────────────────────────────────────────────── */
+
+export type DiaryEntry = {
+  id: string;
+  date: string;
+  slot: MealSlot;
+  recipe_id: string | null;
+  name: string;
+  servings: number;
+  kcal: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  fiber_g: number | null;
+  sugar_g: number | null;
+  sodium_mg: number | null;
+  source: string;
+};
+
+export async function listDiary(startDate: string, endDate = startDate): Promise<DiaryEntry[]> {
+  const db = await ready();
+  return db.getAllAsync<DiaryEntry>(
+    `SELECT id, date, slot, recipe_id, name, servings, kcal, protein_g, carbs_g,
+            fat_g, fiber_g, sugar_g, sodium_mg, source
+       FROM diary_entries
+      WHERE user_id = ? AND deleted_at IS NULL AND date >= ? AND date <= ?
+      ORDER BY date, CASE slot
+        WHEN 'breakfast' THEN 0 WHEN 'lunch' THEN 1
+        WHEN 'dinner' THEN 2 ELSE 3 END, created_at`,
+    [LOCAL_USER, startDate, endDate]
+  );
+}
+
+export type DiaryInput = {
+  date: string;
+  slot: MealSlot;
+  name: string;
+  servings?: number;
+  recipeId?: string | null;
+  source?: 'recipe' | 'quick' | 'plan';
+  /** Per serving; multiplied by servings on the way in. */
+  perServing?: {
+    kcal?: number | null; protein?: number | null; carbs?: number | null;
+    fat?: number | null; fiber?: number | null; sugar?: number | null; sodium?: number | null;
+  } | null;
+};
+
+export async function addDiaryEntry(e: DiaryInput): Promise<string> {
+  const db = await ready();
+  const id = uid();
+  const ts = now();
+  const servings = e.servings ?? 1;
+  const n = e.perServing ?? null;
+  const times = (v: number | null | undefined) => (v == null ? null : v * servings);
+
+  await db.runAsync(
+    `INSERT INTO diary_entries
+       (id, user_id, date, slot, recipe_id, name, servings,
+        kcal, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg,
+        source, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, LOCAL_USER, e.date, e.slot, e.recipeId ?? null, e.name.trim(), servings,
+     times(n?.kcal), times(n?.protein), times(n?.carbs), times(n?.fat),
+     times(n?.fiber), times(n?.sugar), times(n?.sodium),
+     e.source ?? 'quick', ts, ts]
+  );
+  return id;
+}
+
+export async function removeDiaryEntry(id: string) {
+  const db = await ready();
+  const ts = now();
+  await db.runAsync(`UPDATE diary_entries SET deleted_at = ?, updated_at = ? WHERE id = ?`, [ts, ts, id]);
+}
+
+/* ── settings ───────────────────────────────────────────────── */
+
+export async function getSetting(key: string): Promise<string | null> {
+  const db = await ready();
+  const row = await db.getFirstAsync<{ value: string | null }>(
+    `SELECT value FROM app_settings WHERE key = ?`, [key]
+  );
+  return row?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string | null) {
+  const db = await ready();
+  await db.runAsync(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?,?,?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    [key, value, now()]
+  );
+}
+
+export async function getNumberSetting(key: string, fallback: number): Promise<number> {
+  const raw = await getSetting(key);
+  const n = raw == null ? NaN : Number(raw);
+  return Number.isFinite(n) ? n : fallback;
 }
