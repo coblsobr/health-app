@@ -5,6 +5,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { Card, Ch, Row, Sm, Xs, Btn, Divider } from './ui';
 import { Icon } from './Icon';
 import type { RecipeInput } from '../lib/db';
+import { estimateRecipe } from '../lib/nutrition';
 
 export const ALL_TAGS = [
   'Vegetarian', 'Vegan', 'Gluten free', 'Dairy free',
@@ -68,21 +69,37 @@ export function RecipeForm({ initial, submitLabel, onSubmit, onCancel }: Props) 
     setError(null);
     setSaving(true);
     try {
+      const keptIngredients = ingredients.filter((i) => i.text.trim());
+      const servingCount = Math.max(1, parseInt(servings, 10) || 1);
+
+      // Keep whatever the source published; only estimate when nothing was.
+      let nutrition = initial?.nutrition ?? null;
+      if (nutrition?.source !== 'published' && keptIngredients.length) {
+        const e = estimateRecipe(keptIngredients.map((i) => i.text), servingCount);
+        // Below roughly half the lines the total is more misleading than useful.
+        nutrition = e.coverage >= 0.5
+          ? {
+              kcal: e.perServing.kcal, protein: e.perServing.protein,
+              carbs: e.perServing.carbs, fat: e.perServing.fat,
+              fiber: e.perServing.fiber, sugar: e.perServing.sugar,
+              sodium: e.perServing.sodium, source: 'estimated',
+            }
+          : null;
+      }
+
       await onSubmit({
         name: name.trim(),
-        servings: Math.max(1, parseInt(servings, 10) || 1),
+        servings: servingCount,
         prepMin: prep ? parseInt(prep, 10) : null,
         cookMin: cook ? parseInt(cook, 10) : null,
         sourceUrl: sourceUrl.trim() || null,
         photoUri,
         notes: notes.trim() || null,
         rating: initial?.rating ?? null,
-        ingredients: ingredients.filter((i) => i.text.trim()),
+        ingredients: keptIngredients,
         steps: steps.filter((s) => s.trim()),
         tags,
-        // Passed straight through: the form does not edit nutrition, but an
-        // import may have brought some and it must survive the round trip.
-        nutrition: initial?.nutrition ?? null,
+        nutrition,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save.');

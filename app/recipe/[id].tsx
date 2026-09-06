@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { getRecipe, deleteRecipe, toggleFavorite, setRating, type RecipeFull } from '../../lib/db';
 import { Card, Ch, Row, Sm, Xs, H3, Btn, Divider, Tag, KV } from '../../components/ui';
+import { estimateRecipe } from '../../lib/nutrition';
 import { useTheme } from '../../theme/ThemeProvider';
 
 export default function RecipeDetail() {
@@ -15,6 +16,7 @@ export default function RecipeDetail() {
   const [recipe, setRecipe] = useState<RecipeFull | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showBreakdown, setShowBreakdown] = useState(false);
 
   const load = useCallback(() => {
     let alive = true;
@@ -168,11 +170,15 @@ export default function RecipeDetail() {
                   {recipe.sugar_g != null ? <KV k="Sugar" v={recipe.sugar_g + ' g'} sub /> : null}
                 </>
               ) : null}
-              <Xs style={{ marginTop: 6, color: recipe.nutrition_source === 'published' ? c.ok : c.inkFaint }}>
-                {recipe.nutrition_source === 'published'
-                  ? '✓ Published by the source — not estimated'
-                  : 'Estimated from the ingredients'}
-              </Xs>
+              {recipe.nutrition_source === 'published' ? (
+                <Xs style={{ marginTop: 6, color: c.ok }}>✓ Published by the source — not estimated</Xs>
+              ) : (
+                <Pressable onPress={() => setShowBreakdown(true)} hitSlop={6}>
+                  <Xs style={{ marginTop: 6, color: c.info, textDecorationLine: 'underline' }}>
+                    Estimated from the ingredients — see how
+                  </Xs>
+                </Pressable>
+              )}
             </Card>
           ) : null}
 
@@ -216,6 +222,49 @@ export default function RecipeDetail() {
           <Btn label="Delete recipe" ghost onPress={() => setConfirmDelete(true)} style={{ marginTop: 6 }} />
         </View>
       </ScrollView>
+
+      {/* Every estimate can be inspected: a wrong match should be visible,
+          not buried inside a single confident-looking number. */}
+      <Modal visible={showBreakdown} transparent animationType="slide" onRequestClose={() => setShowBreakdown(false)}>
+        <View style={{ flex: 1, backgroundColor: c.scrim, justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: c.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, maxHeight: '80%' }}>
+            <View style={{ padding: 16, paddingBottom: 8 }}>
+              <H3>How this was estimated</H3>
+              <Sm style={{ marginTop: 4 }}>
+                Each line is matched to a USDA food and converted to grams. Anything unmatched
+                contributes nothing, so the total is an underestimate rather than a guess.
+              </Sm>
+            </View>
+            <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 4 }}>
+              {(() => {
+                const e = estimateRecipe(recipe.ingredients.map((i) => i.raw_text), recipe.servings);
+                return (
+                  <>
+                    <Card style={{ paddingVertical: 10 }}>
+                      <KV k="Lines matched" v={`${e.matchedCount} of ${e.totalCount}`} />
+                      <KV k="Per serving" v={`${e.perServing.kcal} cal`} />
+                    </Card>
+                    {e.matches.map((m, i) => (
+                      <View key={i} style={{ paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: c.line }}>
+                        <Sm style={{ color: c.ink }}>{m.raw}</Sm>
+                        <Row style={{ marginTop: 2 }}>
+                          <Xs style={{ flex: 1, color: m.matchedName ? c.inkFaint : c.danger }} numberOfLines={1}>
+                            {m.matchedName ?? 'no match found'}
+                          </Xs>
+                          <Xs style={{ color: c.inkSoft }}>
+                            {m.grams != null ? `${m.grams} g · ${Math.round(m.kcal)} cal` : (m.reason === 'no-quantity' ? 'no amount given' : '—')}
+                          </Xs>
+                        </Row>
+                      </View>
+                    ))}
+                  </>
+                );
+              })()}
+              <Btn label="Close" ghost onPress={() => setShowBreakdown(false)} style={{ marginTop: 14 }} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* A Modal rather than Alert.alert — multi-button alerts are silently
           ignored by react-native-web, which makes the button look broken. */}
