@@ -149,6 +149,30 @@ Lessons from real cookbook pages, all of which cost a wrong result first:
 - **A cookbook recipe usually spans a spread.** Reads up to 4 images as one
   recipe, and reports `warnings` rather than saving a half-empty recipe.
 
+## Nutrition estimation
+
+`lib/nutrition.ts` + `lib/foods.json` (4,182 USDA SR Legacy cooking foods,
+public domain, with USDA's measured cup/tbsp/tsp/each gram weights). Pure and
+offline — test it in node, not through the UI. Published nutrition always wins;
+estimates run only when a source gave none, and are skipped below 50% coverage.
+
+Matching rules learned the hard way, each from a wrong answer:
+- **USDA descriptions read "Category, food, qualifier".** Identity spans the
+  *first two* comma segments — "Spices, caraway seed", "Leavening agents,
+  baking powder". Matching only segment one misses every spice and broth.
+- **Penalise candidate words the recipe never asked for**, weighted far higher
+  before the first comma than after. Without it "vegetable broth" matches
+  "Fish broth"; with it applied evenly, "olive oil" matches nothing.
+- **An unrequested cooking method is a real difference**, not a wording quirk —
+  "Onions, yellow, sauteed" carries the oil it was cooked in.
+- **Ambiguous staples get an explicit alias** (`ALIASES`). Nothing in the data
+  says "flour" means wheat rather than carob or soy.
+- **Parse fractions before leading integers.** "1/2" parsed as 1 for a while,
+  silently doubling every fractional ingredient.
+
+Benchmark: Love & Lemons lentil soup publishes 264 cal/serving; we estimate
+281 (+6%). Re-check that after any scoring change.
+
 ## Status
 
 - [x] Phase 0 — shell: three worlds, drawer, tabs, theming.
@@ -158,4 +182,5 @@ Lessons from real cookbook pages, all of which cost a wrong result first:
 - [x] Phase 2a — import from a pasted link (`lib/import.ts`)
 - [x] Phase 2b — photo / screenshot import (`lib/ocr.ts`), multi-page
 - [ ] Phase 2c — in-app browser "browse & grab"
-- [ ] Phases 3-11 — see `../HEALTH-APP-PLAN.md`
+- [x] Phase 3 — nutrition estimation (cost waits on Meijer data, Phase 7)
+- [ ] Phases 4-11 — see `../HEALTH-APP-PLAN.md`
