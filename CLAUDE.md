@@ -204,6 +204,24 @@ Benchmark: Love & Lemons lentil soup publishes 264 cal/serving; we estimate
 - `replacePlanGrocery()` preserves ticks by `item_key` and leaves manual items
   alone — rebuilding after a plan change must not undo a half-done shop.
 
+## Diary and settings
+
+`diary_entries` + `app_settings` in `db.ts`.
+
+- **Diary entries snapshot their nutrition.** Never join a diary row back to
+  the recipe for its calories: editing or deleting a recipe would rewrite
+  history that already happened.
+- `app_settings` is the key/value store for small preferences.
+  `calorie_target` drives both the Diary and Health Today; `theme_mode`
+  persists the light/dark choice.
+- **Health Today shows a dash for anything not yet measured** (burn, steps,
+  HR, weight). Do not substitute plausible numbers — that screen exists to get
+  calories in vs. out right, and a fake burn corrupts exactly that.
+
+**Web storage does not survive a Metro restart.** expo-sqlite on web is
+memory-backed, so test data vanishes when the dev server restarts. Native is a
+real file and unaffected. Re-seed rather than assuming a persistence bug.
+
 ## Status
 
 - [x] Phase 0 — shell: three worlds, drawer, tabs, theming.
@@ -216,5 +234,6 @@ Benchmark: Love & Lemons lentil soup publishes 264 cal/serving; we estimate
 - [x] Phase 3 — nutrition estimation (cost waits on Meijer data, Phase 7)
 - [x] Meal planning — prep vs daily modes, add-to-plan, day totals
 - [x] Grocery list from a plan — batch-aware, merged, aisle-grouped
-- [ ] Next: diary logging (log a planned meal in one tap), then the Health tab join
+- [x] Diary logging + Health tab reading real data; theme now persists
+- [ ] Next: Health Connect (Phase 8) to make 'Burned' real, then the adaptive budget
 - [ ] Phases 4-11 — see `../HEALTH-APP-PLAN.md`
