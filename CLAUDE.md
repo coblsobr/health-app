@@ -188,6 +188,22 @@ Benchmark: Love & Lemons lentil soup publishes 264 cal/serving; we estimate
 - Day totals multiply per-serving nutrition by servings; that number has to
   agree with the diary and the Health tab.
 
+## Grocery list
+
+`lib/grocery.ts` (pure) + `grocery_items` in `db.ts`.
+
+- **Scale, then batch, then merge** — in that order. `servingsByRecipe()` sums
+  a batch's servings into one scaling of the recipe; getting this wrong buys
+  seven times too much for a prep week.
+- **Merge in the unit of the largest contribution**, not a base unit. "1 lb +
+  8 oz" must read 1.5 lb, never 680 g.
+- **Never combine across unit families.** "500 g + 2 tbsp" is honest; averaging
+  them is not. No quantity at all shows "to taste".
+- Aisles come from the USDA category the nutrition matcher already resolves,
+  so there is no second food taxonomy to maintain.
+- `replacePlanGrocery()` preserves ticks by `item_key` and leaves manual items
+  alone — rebuilding after a plan change must not undo a half-done shop.
+
 ## Status
 
 - [x] Phase 0 — shell: three worlds, drawer, tabs, theming.
@@ -199,5 +215,6 @@ Benchmark: Love & Lemons lentil soup publishes 264 cal/serving; we estimate
 - [ ] Phase 2c — in-app browser "browse & grab"
 - [x] Phase 3 — nutrition estimation (cost waits on Meijer data, Phase 7)
 - [x] Meal planning — prep vs daily modes, add-to-plan, day totals
-- [ ] Next: grocery list from a plan (batch-aware), then diary logging
+- [x] Grocery list from a plan — batch-aware, merged, aisle-grouped
+- [ ] Next: diary logging (log a planned meal in one tap), then the Health tab join
 - [ ] Phases 4-11 — see `../HEALTH-APP-PLAN.md`
