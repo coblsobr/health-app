@@ -2,9 +2,10 @@ import { useCallback, useState } from 'react';
 import { View, Text, Pressable, ScrollView, Image, Modal, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { getRecipe, deleteRecipe, toggleFavorite, setRating, type RecipeFull } from '../../lib/db';
+import { getRecipe, deleteRecipe, toggleFavorite, setRating, addPlanEntry, type RecipeFull, type MealSlot } from '../../lib/db';
 import { Card, Ch, Row, Sm, Xs, H3, Btn, Divider, Tag, KV } from '../../components/ui';
 import { estimateRecipe } from '../../lib/nutrition';
+import { toISODate, addDays, formatDayLabel } from '../../lib/plan';
 import { useTheme } from '../../theme/ThemeProvider';
 
 export default function RecipeDetail() {
@@ -17,6 +18,9 @@ export default function RecipeDetail() {
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [showAddToPlan, setShowAddToPlan] = useState(false);
+  const [addedNote, setAddedNote] = useState<string | null>(null);
+  const [planDate, setPlanDate] = useState(() => toISODate(new Date()));
 
   const load = useCallback(() => {
     let alive = true;
@@ -219,9 +223,71 @@ export default function RecipeDetail() {
             </Card>
           ) : null}
 
-          <Btn label="Delete recipe" ghost onPress={() => setConfirmDelete(true)} style={{ marginTop: 6 }} />
+          <Btn label="Add to meal plan" onPress={() => setShowAddToPlan(true)} />
+          {addedNote ? <Xs style={{ textAlign: 'center', marginTop: 6, color: c.ok }}>{addedNote}</Xs> : null}
+          <Btn label="Delete recipe" ghost onPress={() => setConfirmDelete(true)} style={{ marginTop: 8 }} />
         </View>
       </ScrollView>
+
+      <Modal visible={showAddToPlan} transparent animationType="slide" onRequestClose={() => setShowAddToPlan(false)}>
+        <View style={{ flex: 1, backgroundColor: c.scrim, justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: c.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 16 }}>
+            <H3>Add to meal plan</H3>
+            <Sm style={{ marginTop: 4, marginBottom: 12 }}>Pick a day, then a meal.</Sm>
+            {(() => {
+              const today = toISODate(new Date());
+              const upcoming = Array.from({ length: 7 }, (_, i) => addDays(today, i));
+              return (
+                <>
+                  <Row style={{ gap: 6, flexWrap: 'wrap', justifyContent: 'flex-start' }}>
+                    {upcoming.map((d) => {
+                      const { weekday, day } = formatDayLabel(d);
+                      const on = planDate === d;
+                      return (
+                        <Pressable key={d} onPress={() => setPlanDate(d)}>
+                          <View style={{
+                            width: 42, paddingVertical: 7, borderRadius: 11, alignItems: 'center',
+                            backgroundColor: on ? c.nut : c.cardAlt,
+                            borderWidth: 1, borderColor: on ? c.nut : c.line,
+                          }}>
+                            <Text style={{ fontFamily: fonts.semi, fontSize: 8.5, color: on ? '#fff' : c.inkFaint }}>
+                              {weekday.toUpperCase()}
+                            </Text>
+                            <Text style={{ fontFamily: fonts.displayBold, fontSize: 14, color: on ? '#fff' : c.ink }}>{day}</Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </Row>
+                  <Divider />
+                  <Row style={{ gap: 8 }}>
+                    {(['breakfast', 'lunch', 'dinner'] as MealSlot[]).map((slot) => (
+                      <Pressable
+                        key={slot}
+                        style={{ flex: 1 }}
+                        onPress={async () => {
+                          await addPlanEntry({ date: planDate, slot, recipeId: id, servings: 1 });
+                          const { weekday } = formatDayLabel(planDate);
+                          setAddedNote(`Added to ${slot} on ${weekday}`);
+                          setShowAddToPlan(false);
+                        }}
+                      >
+                        <View style={{
+                          borderWidth: 1, borderColor: c.line, borderRadius: 12,
+                          paddingVertical: 12, alignItems: 'center', backgroundColor: c.card,
+                        }}>
+                          <Text style={{ fontFamily: fonts.semi, fontSize: 11.5, color: c.ink, textTransform: 'capitalize' }}>{slot}</Text>
+                        </View>
+                      </Pressable>
+                    ))}
+                  </Row>
+                </>
+              );
+            })()}
+            <Btn label="Cancel" ghost onPress={() => setShowAddToPlan(false)} style={{ marginTop: 14 }} />
+          </View>
+        </View>
+      </Modal>
 
       {/* Every estimate can be inspected: a wrong match should be visible,
           not buried inside a single confident-looking number. */}

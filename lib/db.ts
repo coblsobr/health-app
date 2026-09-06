@@ -132,6 +132,28 @@ async function openAndMigrate() {
       PRIMARY KEY (recipe_id, tag)
     );
 
+    -- One row per planned meal, keyed by date. There is deliberately no
+    -- "week" table: weeks are just a date range, so nothing breaks at a week
+    -- boundary and a plan can be any length.
+    CREATE TABLE IF NOT EXISTS meal_plan_entries (
+      id          TEXT PRIMARY KEY NOT NULL,
+      user_id     TEXT NOT NULL DEFAULT 'local',
+      date        TEXT NOT NULL,                    -- YYYY-MM-DD
+      slot        TEXT NOT NULL,                    -- breakfast | lunch | dinner | snack
+      recipe_id   TEXT REFERENCES recipes(id) ON DELETE CASCADE,
+      servings    REAL NOT NULL DEFAULT 1,
+      -- A meal-prep batch is cooked once and eaten several times. The cooked
+      -- meal carries is_leftover = 0; the repeats share its batch_id so the
+      -- grocery list counts the ingredients once, not once per serving.
+      is_leftover INTEGER NOT NULL DEFAULT 0,
+      batch_id    TEXT,
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL,
+      deleted_at  TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_plan_date  ON meal_plan_entries(user_id, date, deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_plan_batch ON meal_plan_entries(batch_id);
     CREATE INDEX IF NOT EXISTS idx_ing_recipe  ON recipe_ingredients(recipe_id);
     CREATE INDEX IF NOT EXISTS idx_step_recipe ON recipe_steps(recipe_id);
     CREATE INDEX IF NOT EXISTS idx_recipe_user ON recipes(user_id, deleted_at);
@@ -312,4 +334,101 @@ export async function countRecipes(): Promise<number> {
     [LOCAL_USER]
   );
   return row?.n ?? 0;
+}
+
+/* ── meal plan ──────────────────────────────────────────────── */
+
+export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+export const SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+export type PlanEntry = {
+  id: string;
+  date: string;
+  slot: MealSlot;
+  recipe_id: string | null;
+  servings: number;
+  is_leftover: number;
+  batch_id: string | null;
+  // joined from recipes
+  name: string | null;
+  photo_uri: string | null;
+  kcal: number | null;
+  protein_g: number | null;
+  recipe_servings: number | null;
+};
+
+/** Every planned meal between two dates, inclusive. */
+export async function listPlan(startDate: string, endDate: string): Promise<PlanEntry[]> {
+  const db = await ready();
+  return db.getAllAsync<PlanEntry>(
+    `SELECT e.id, e.date, e.slot, e.recipe_id, e.servings, e.is_leftover, e.batch_id,
+            r.name, r.photo_uri, r.kcal, r.protein_g, r.servings AS recipe_servings
+       FROM meal_plan_entries e
+       LEFT JOIN recipes r ON r.id = e.recipe_id
+      WHERE e.user_id = ? AND e.deleted_at IS NULL
+        AND e.date >= ? AND e.date <= ?
+      ORDER BY e.date, CASE e.slot
+        WHEN 'breakfast' THEN 0 WHEN 'lunch' THEN 1
+        WHEN 'dinner' THEN 2 ELSE 3 END`,
+    [LOCAL_USER, startDate, endDate]
+  );
+}
+
+export async function addPlanEntry(e: {
+  date: string; slot: MealSlot; recipeId: string; servings?: number;
+  isLeftover?: boolean; batchId?: string | null;
+}): Promise<string> {
+  const db = await ready();
+  const id = uid();
+  const ts = now();
+  await db.runAsync(
+    `INSERT INTO meal_plan_entries
+       (id, user_id, date, slot, recipe_id, servings, is_leftover, batch_id, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [id, LOCAL_USER, e.date, e.slot, e.recipeId, e.servings ?? 1,
+     e.isLeftover ? 1 : 0, e.batchId ?? null, ts, ts]
+  );
+  return id;
+}
+
+export async function removePlanEntry(id: string) {
+  const db = await ready();
+  const ts = now();
+  await db.runAsync(`UPDATE meal_plan_entries SET deleted_at = ?, updated_at = ? WHERE id = ?`, [ts, ts, id]);
+}
+
+/** Clear a date range before regenerating, so a rebuild replaces rather than stacks. */
+export async function clearPlanRange(startDate: string, endDate: string) {
+  const db = await ready();
+  const ts = now();
+  await db.runAsync(
+    `UPDATE meal_plan_entries SET deleted_at = ?, updated_at = ?
+      WHERE user_id = ? AND deleted_at IS NULL AND date >= ? AND date <= ?`,
+    [ts, ts, LOCAL_USER, startDate, endDate]
+  );
+}
+
+/** Write a generated plan in one transaction. */
+export async function savePlan(entries: {
+  date: string; slot: MealSlot; recipeId: string; servings: number;
+  isLeftover: boolean; batchId: string | null;
+}[]) {
+  const db = await ready();
+  const ts = now();
+  await db.withTransactionAsync(async () => {
+    for (const e of entries) {
+      await db.runAsync(
+        `INSERT INTO meal_plan_entries
+           (id, user_id, date, slot, recipe_id, servings, is_leftover, batch_id, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        [uid(), LOCAL_USER, e.date, e.slot, e.recipeId, e.servings,
+         e.isLeftover ? 1 : 0, e.batchId, ts, ts]
+      );
+    }
+  });
+}
+
+/** A stable id for grouping one cook session with its leftovers. */
+export function newBatchId() {
+  return uid();
 }
