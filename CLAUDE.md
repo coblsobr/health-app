@@ -130,6 +130,25 @@ Known truths, measured against 12 live sites:
 - Import needs a direct cross-origin fetch, so it works on the phone only;
   browsers block it.
 
+## Photo / OCR import
+
+`lib/ocr.ts`. Engine is ML Kit (Android) / Vision (iOS) via
+`@react-native-ml-kit/text-recognition` — free, on-device, offline. It is an
+**old-architecture module** (no codegenConfig) that works through RN 0.86's
+interop layer; check it still links after any SDK bump.
+
+`parseRecipeText` is pure — test it against transcripts, not through the UI.
+
+Lessons from real cookbook pages, all of which cost a wrong result first:
+- **Read timings only from labelled line starts.** Scanning the page matched
+  prose ("might require baking in batches") ahead of "Bake time:".
+- **"Serves" outranks "Yields".** A page can carry both; a meal plan needs
+  people fed, not items produced.
+- **Parse servings before the noise filter.** That filter drops lone numbers as
+  page numbers, which also eats the bare "8" printed under a SERVES heading.
+- **A cookbook recipe usually spans a spread.** Reads up to 4 images as one
+  recipe, and reports `warnings` rather than saving a half-empty recipe.
+
 ## Status
 
 - [x] Phase 0 — shell: three worlds, drawer, tabs, theming.
@@ -137,5 +156,6 @@ Known truths, measured against 12 live sites:
 - [x] Phase 1 — recipe library: SQLite, add/view/edit/delete, rating,
       favourites, photos, search, sort, tags.
 - [x] Phase 2a — import from a pasted link (`lib/import.ts`)
-- [ ] Phase 2b — in-app browser grab, photo/OCR import
+- [x] Phase 2b — photo / screenshot import (`lib/ocr.ts`), multi-page
+- [ ] Phase 2c — in-app browser "browse & grab"
 - [ ] Phases 3-11 — see `../HEALTH-APP-PLAN.md`
