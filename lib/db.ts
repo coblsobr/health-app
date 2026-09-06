@@ -152,6 +152,24 @@ async function openAndMigrate() {
       deleted_at  TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS grocery_items (
+      id           TEXT PRIMARY KEY NOT NULL,
+      user_id      TEXT NOT NULL DEFAULT 'local',
+      name         TEXT NOT NULL,
+      aisle        TEXT NOT NULL DEFAULT 'Other',
+      qty_text     TEXT,
+      is_purchased INTEGER NOT NULL DEFAULT 0,
+      source       TEXT NOT NULL DEFAULT 'plan',   -- 'plan' | 'manual'
+      -- Stable identity for an item across rebuilds, so ticking something off
+      -- survives regenerating the list from a changed plan.
+      item_key     TEXT,
+      recipes      TEXT,
+      created_at   TEXT NOT NULL,
+      updated_at   TEXT NOT NULL,
+      deleted_at   TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_grocery ON grocery_items(user_id, deleted_at);
     CREATE INDEX IF NOT EXISTS idx_plan_date  ON meal_plan_entries(user_id, date, deleted_at);
     CREATE INDEX IF NOT EXISTS idx_plan_batch ON meal_plan_entries(batch_id);
     CREATE INDEX IF NOT EXISTS idx_ing_recipe  ON recipe_ingredients(recipe_id);
@@ -431,4 +449,129 @@ export async function savePlan(entries: {
 /** A stable id for grouping one cook session with its leftovers. */
 export function newBatchId() {
   return uid();
+}
+
+/* ── grocery list ───────────────────────────────────────────── */
+
+export type GroceryItem = {
+  id: string;
+  name: string;
+  aisle: string;
+  qty_text: string | null;
+  is_purchased: number;
+  source: string;
+  item_key: string | null;
+  recipes: string | null;
+};
+
+export async function listGrocery(): Promise<GroceryItem[]> {
+  const db = await ready();
+  return db.getAllAsync<GroceryItem>(
+    `SELECT id, name, aisle, qty_text, is_purchased, source, item_key, recipes
+       FROM grocery_items
+      WHERE user_id = ? AND deleted_at IS NULL
+      ORDER BY is_purchased, name`,
+    [LOCAL_USER]
+  );
+}
+
+export async function setGroceryPurchased(id: string, on: boolean) {
+  const db = await ready();
+  await db.runAsync(
+    `UPDATE grocery_items SET is_purchased = ?, updated_at = ? WHERE id = ?`,
+    [on ? 1 : 0, now(), id]
+  );
+}
+
+export async function addManualGroceryItem(name: string, qtyText: string | null = null) {
+  const db = await ready();
+  const ts = now();
+  const id = uid();
+  await db.runAsync(
+    `INSERT INTO grocery_items (id, user_id, name, aisle, qty_text, is_purchased, source, item_key, created_at, updated_at)
+     VALUES (?,?,?,?,?,0,'manual',?,?,?)`,
+    [id, LOCAL_USER, name.trim(), 'Other', qtyText, `manual:${name.trim().toLowerCase()}`, ts, ts]
+  );
+  return id;
+}
+
+export async function removeGroceryItem(id: string) {
+  const db = await ready();
+  const ts = now();
+  await db.runAsync(`UPDATE grocery_items SET deleted_at = ?, updated_at = ? WHERE id = ?`, [ts, ts, id]);
+}
+
+export async function clearPurchasedGrocery() {
+  const db = await ready();
+  const ts = now();
+  await db.runAsync(
+    `UPDATE grocery_items SET deleted_at = ?, updated_at = ?
+      WHERE user_id = ? AND deleted_at IS NULL AND is_purchased = 1`,
+    [ts, ts, LOCAL_USER]
+  );
+}
+
+/**
+ * Replace the plan-derived part of the list.
+ *
+ * Manual additions are left alone, and anything already ticked off stays
+ * ticked — rebuilding after a plan change should not undo a shopping trip
+ * already half done.
+ */
+export async function replacePlanGrocery(
+  lines: { key: string; name: string; aisle: string; display: string; recipes: string[] }[]
+) {
+  const db = await ready();
+  const ts = now();
+
+  const previous = await db.getAllAsync<{ item_key: string; is_purchased: number }>(
+    `SELECT item_key, is_purchased FROM grocery_items
+      WHERE user_id = ? AND deleted_at IS NULL AND source = 'plan'`,
+    [LOCAL_USER]
+  );
+  const wasPurchased = new Map(previous.map((p) => [p.item_key, p.is_purchased]));
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `UPDATE grocery_items SET deleted_at = ?, updated_at = ?
+        WHERE user_id = ? AND deleted_at IS NULL AND source = 'plan'`,
+      [ts, ts, LOCAL_USER]
+    );
+    for (const l of lines) {
+      await db.runAsync(
+        `INSERT INTO grocery_items
+           (id, user_id, name, aisle, qty_text, is_purchased, source, item_key, recipes, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,'plan',?,?,?,?)`,
+        [uid(), LOCAL_USER, l.name, l.aisle, l.display,
+         wasPurchased.get(l.key) ?? 0, l.key, l.recipes.join(', '), ts, ts]
+      );
+    }
+  });
+}
+
+/** Ingredient lines for a set of recipes, for building the shopping list. */
+export async function getIngredientsFor(
+  recipeIds: string[]
+): Promise<Map<string, { name: string; servings: number; lines: string[] }>> {
+  const out = new Map<string, { name: string; servings: number; lines: string[] }>();
+  if (recipeIds.length === 0) return out;
+  const db = await ready();
+  const marks = recipeIds.map(() => '?').join(',');
+  const rows = await db.getAllAsync<{ id: string; name: string; servings: number; raw_text: string | null }>(
+    `SELECT r.id, r.name, r.servings, i.raw_text
+       FROM recipes r
+       LEFT JOIN recipe_ingredients i ON i.recipe_id = r.id
+      WHERE r.id IN (${marks})
+      ORDER BY r.id, i.position`,
+    recipeIds
+  );
+  for (const row of rows) {
+    let entry = out.get(row.id);
+    if (!entry) {
+      entry = { name: row.name, servings: row.servings, lines: [] };
+      out.set(row.id, entry);
+    }
+    if (row.raw_text) entry.lines.push(row.raw_text);
+  }
+  return out;
 }

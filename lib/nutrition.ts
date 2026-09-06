@@ -196,6 +196,10 @@ export function parseIngredientLine(raw: string): ParsedIngredient {
   const paren = s.match(/^\s*\(([^)]*)\)\s*/);
   if (paren) s = s.slice(paren[0].length);
 
+  // A trailing purpose clause is not part of the food: "flour for dusting"
+  // must land on the same shopping line as the flour itself.
+  s = s.replace(/\s+for\s+(?:the\s+)?[a-z\s-]{2,30}$/i, '');
+
   // Everything before the first comma is the food; the rest is preparation.
   let food = s.split(',')[0];
   food = food.replace(/\([^)]*\)/g, ' ');       // "(all-purpose)"
