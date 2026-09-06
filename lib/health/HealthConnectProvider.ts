@@ -12,13 +12,32 @@
 import type { HealthProvider, HealthStatus, DaySummary, Workout, BodyMetrics } from './types';
 import { EMPTY_DAY } from './types';
 
-type HC = typeof import('react-native-health-connect');
+/**
+ * Described structurally rather than imported, so this file still compiles
+ * while the package is uninstalled. It is reinstalled when Health Connect is
+ * wired up for real, which also needs a fresh APK.
+ */
+type HC = {
+  initialize(): Promise<boolean>;
+  getSdkStatus(): Promise<number>;
+  requestPermission(perms: unknown): Promise<unknown>;
+  getGrantedPermissions(): Promise<{ recordType: string }[]>;
+  openHealthConnectSettings(): Promise<void>;
+  readRecords(type: string, opts: unknown): Promise<{ records: unknown[] }>;
+  aggregateRecord(req: unknown): Promise<unknown>;
+  SdkAvailabilityStatus: {
+    SDK_UNAVAILABLE: number;
+    SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED: number;
+    SDK_AVAILABLE: number;
+  };
+};
 
 let cached: HC | null | undefined;
 
 function hc(): HC | null {
   if (cached === undefined) {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       cached = require('react-native-health-connect') as HC;
     } catch {
       cached = null; // not in this build

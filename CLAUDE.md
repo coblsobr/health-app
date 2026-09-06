@@ -30,6 +30,26 @@ Then open http://localhost:8081. For the phone, see "Shipping" below.
 - `babel.config.js` uses `react-native-worklets/plugin`, **not**
   `react-native-reanimated/plugin` — Reanimated 4 moved it. Must stay last.
 
+## Design direction — editorial
+
+The UI was rebuilt away from a generated look. Keep these when adding screens:
+
+- **Content sits on the page, separated by `<Rule />`.** A `<Card>` is for a
+  thing that is genuinely an object. Do not wrap every group in one.
+- **Sentence-case serif headings** (`<SectionTitle>`), never uppercase tracked
+  labels.
+- **No emoji as icons.** Use `components/Icon.tsx`.
+- **One accent.** `c.nut` carries the app; `fit`/`hlth`/`info` are muted
+  supporting roles, not co-stars.
+- **Use the type scale in `tokens.ts`.** One loud voice per screen (`hero`,
+  46px) and a quiet one for everything else. Everything landing between
+  10-20px is what made it read flat.
+- Primitives: `Rule`, `SectionTitle`, `Hero`, `Meter`, `LineItem`,
+  `TextAction`. Prefer them over `Card` + `Ch` + `Btn`.
+
+Diary is the reference implementation. Other screens still use the old
+card-heavy layout and get reworked one at a time.
+
 ## Theming
 
 One set of semantic tokens, two value sets, in `theme/tokens.ts`. Components
