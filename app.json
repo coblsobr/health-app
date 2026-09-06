@@ -49,7 +49,8 @@
           "photosPermission": "Used only when you pick a photo for a recipe.",
           "cameraPermission": "Used to photograph a cookbook page so the recipe can be read."
         }
-      ]
+      ],
+      "react-native-health-connect"
     ],
     "experiments": {
       "typedRoutes": true
