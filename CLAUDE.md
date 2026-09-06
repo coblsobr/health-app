@@ -173,6 +173,21 @@ Matching rules learned the hard way, each from a wrong answer:
 Benchmark: Love & Lemons lentil soup publishes 264 cal/serving; we estimate
 281 (+6%). Re-check that after any scoring change.
 
+## Meal planning
+
+`lib/plan.ts` (pure, testable in node) + `meal_plan_entries` in `db.ts`.
+
+- **Keyed by date, no "week" table.** A week is just a range, so nothing
+  breaks at a boundary and a plan can be any length.
+- **Two modes.** `prep` cooks a few batches and spreads them over contiguous
+  days; `daily` picks a different recipe per slot. Leftovers share the cooked
+  meal's `batch_id`, which is what lets the grocery list buy ingredients once
+  per batch instead of once per serving.
+- **Never use `toISOString()` for plan dates** — it shifts the day for anyone
+  west of Greenwich. `toISODate()` builds from local calendar parts.
+- Day totals multiply per-serving nutrition by servings; that number has to
+  agree with the diary and the Health tab.
+
 ## Status
 
 - [x] Phase 0 — shell: three worlds, drawer, tabs, theming.
@@ -183,4 +198,6 @@ Benchmark: Love & Lemons lentil soup publishes 264 cal/serving; we estimate
 - [x] Phase 2b — photo / screenshot import (`lib/ocr.ts`), multi-page
 - [ ] Phase 2c — in-app browser "browse & grab"
 - [x] Phase 3 — nutrition estimation (cost waits on Meijer data, Phase 7)
+- [x] Meal planning — prep vs daily modes, add-to-plan, day totals
+- [ ] Next: grocery list from a plan (batch-aware), then diary logging
 - [ ] Phases 4-11 — see `../HEALTH-APP-PLAN.md`
