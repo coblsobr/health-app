@@ -113,11 +113,29 @@ correct and silently does nothing. `ready()` therefore times out after 8s
 rather than hanging forever, and the library screen shows "Storage
 unavailable". **Verify anything storage-backed on the phone, not on web.**
 
+## Recipe import
+
+`lib/import.ts` reads **schema.org/Recipe JSON-LD** — the structured data sites
+publish for search engines. Exact, free, no AI. `parseRecipeHtml` is pure, so
+test it against saved or live HTML rather than through the UI.
+
+Known truths, measured against 12 live sites:
+- Every page that returns HTML parses fully via JSON-LD.
+- **Dotdash Meredith sites (Allrecipes, Serious Eats, Simply Recipes) return
+  403** to non-browser requests. Not fixable with headers; photo import is the
+  answer for those.
+- **Attribute values are often unquoted** in minified HTML (`type=application/ld+json`).
+  Any regex over HTML here must treat quotes as optional — requiring them
+  silently skipped every Yoast-powered blog.
+- Import needs a direct cross-origin fetch, so it works on the phone only;
+  browsers block it.
+
 ## Status
 
 - [x] Phase 0 — shell: three worlds, drawer, tabs, theming.
       Built, installed, on GitHub, EAS Update wired.
 - [x] Phase 1 — recipe library: SQLite, add/view/edit/delete, rating,
       favourites, photos, search, sort, tags.
-- [ ] Phase 2 — imports (browser grab, link, photo OCR)
+- [x] Phase 2a — import from a pasted link (`lib/import.ts`)
+- [ ] Phase 2b — in-app browser grab, photo/OCR import
 - [ ] Phases 3-11 — see `../HEALTH-APP-PLAN.md`
