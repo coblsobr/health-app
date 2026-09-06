@@ -27,6 +27,17 @@ export type Recipe = {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  // Per serving. Populated by import when the source publishes it; Phase 3
+  // will estimate the rest from the ingredient list.
+  kcal: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  fiber_g: number | null;
+  sugar_g: number | null;
+  sodium_mg: number | null;
+  /** 'published' (from the source) or 'estimated'. Always shown to the user. */
+  nutrition_source: string | null;
 };
 
 export type Ingredient = {
@@ -125,7 +136,40 @@ async function openAndMigrate() {
     CREATE INDEX IF NOT EXISTS idx_step_recipe ON recipe_steps(recipe_id);
     CREATE INDEX IF NOT EXISTS idx_recipe_user ON recipes(user_id, deleted_at);
   `);
+
+  await ensureColumns(db, 'recipes', {
+    kcal: 'INTEGER',
+    protein_g: 'INTEGER',
+    carbs_g: 'INTEGER',
+    fat_g: 'INTEGER',
+    fiber_g: 'INTEGER',
+    sugar_g: 'INTEGER',
+    sodium_mg: 'INTEGER',
+    nutrition_source: 'TEXT',
+  });
+
   return db;
+}
+
+/**
+ * Add any missing columns to an existing table.
+ *
+ * Checking the live schema rather than tracking a version number keeps
+ * migrations idempotent and safe to reorder — important while the schema is
+ * still moving and a phone may be several versions behind.
+ */
+async function ensureColumns(
+  db: SQLite.SQLiteDatabase,
+  table: string,
+  columns: Record<string, string>
+) {
+  const existing = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+  const have = new Set(existing.map((c) => c.name));
+  for (const [name, type] of Object.entries(columns)) {
+    if (!have.has(name)) {
+      await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+    }
+  }
 }
 
 function uid() {
@@ -146,6 +190,17 @@ export type RecipeInput = {
   ingredients: { text: string; isPrimary: boolean }[];
   steps: string[];
   tags: string[];
+  /** Per serving. Omit when unknown. */
+  nutrition?: {
+    kcal: number | null;
+    protein: number | null;
+    carbs: number | null;
+    fat: number | null;
+    fiber: number | null;
+    sugar: number | null;
+    sodium: number | null;
+    source: 'published' | 'estimated';
+  } | null;
 };
 
 export async function listRecipes(): Promise<Recipe[]> {
@@ -175,14 +230,19 @@ export async function saveRecipe(input: RecipeInput, id?: string): Promise<strin
   const db = await ready();
   const recipeId = id ?? uid();
   const ts = now();
+  const n = input.nutrition ?? null;
 
   await db.withTransactionAsync(async () => {
     if (id) {
       await db.runAsync(
         `UPDATE recipes SET name=?, servings=?, prep_min=?, cook_min=?, source_url=?,
-           photo_uri=?, notes=?, rating=?, updated_at=? WHERE id=?`,
+           photo_uri=?, notes=?, rating=?, updated_at=?,
+           kcal=?, protein_g=?, carbs_g=?, fat_g=?, fiber_g=?, sugar_g=?, sodium_mg=?,
+           nutrition_source=? WHERE id=?`,
         [input.name, input.servings, input.prepMin, input.cookMin, input.sourceUrl,
-         input.photoUri, input.notes, input.rating, ts, id]
+         input.photoUri, input.notes, input.rating, ts,
+         n?.kcal ?? null, n?.protein ?? null, n?.carbs ?? null, n?.fat ?? null,
+         n?.fiber ?? null, n?.sugar ?? null, n?.sodium ?? null, n?.source ?? null, id]
       );
       // Children are small; replacing them wholesale is simpler and safer than
       // diffing, and avoids orphaned rows when items are reordered or removed.
@@ -192,10 +252,13 @@ export async function saveRecipe(input: RecipeInput, id?: string): Promise<strin
     } else {
       await db.runAsync(
         `INSERT INTO recipes (id, user_id, name, source_url, photo_uri, servings, prep_min,
-           cook_min, rating, is_favorite, notes, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?)`,
+           cook_min, rating, is_favorite, notes, created_at, updated_at,
+           kcal, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, nutrition_source)
+         VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?)`,
         [recipeId, LOCAL_USER, input.name, input.sourceUrl, input.photoUri, input.servings,
-         input.prepMin, input.cookMin, input.rating, input.notes, ts, ts]
+         input.prepMin, input.cookMin, input.rating, input.notes, ts, ts,
+         n?.kcal ?? null, n?.protein ?? null, n?.carbs ?? null, n?.fat ?? null,
+         n?.fiber ?? null, n?.sugar ?? null, n?.sodium ?? null, n?.source ?? null]
       );
     }
 

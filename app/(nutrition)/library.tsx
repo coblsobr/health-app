@@ -115,9 +115,10 @@ export default function Library() {
           <Icon name="library" size={30} color={c.inkFaint} />
           <H3 style={{ marginTop: 10 }}>No recipes yet</H3>
           <Sm style={{ textAlign: 'center', marginTop: 5, marginBottom: 14 }}>
-            Add one by hand to get started. Website and photo import land next.
+            Paste a link from any cooking site and the whole recipe comes across.
           </Sm>
-          <Btn label="+ Add a recipe" onPress={() => router.push('/recipe/new')} style={{ paddingHorizontal: 24 }} />
+          <Btn label="Import from a link" onPress={() => router.push('/recipe/import')} style={{ paddingHorizontal: 24 }} />
+          <Btn label="+ Add by hand" ghost onPress={() => router.push('/recipe/new')} style={{ marginTop: 8, paddingHorizontal: 24 }} />
         </Card>
       ) : null}
 

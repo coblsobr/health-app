@@ -80,6 +80,9 @@ export function RecipeForm({ initial, submitLabel, onSubmit, onCancel }: Props) 
         ingredients: ingredients.filter((i) => i.text.trim()),
         steps: steps.filter((s) => s.trim()),
         tags,
+        // Passed straight through: the form does not edit nutrition, but an
+        // import may have brought some and it must survive the round trip.
+        nutrition: initial?.nutrition ?? null,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save.');

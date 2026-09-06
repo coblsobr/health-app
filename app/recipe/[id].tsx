@@ -3,7 +3,7 @@ import { View, Text, Pressable, ScrollView, Image, Modal, ActivityIndicator } fr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { getRecipe, deleteRecipe, toggleFavorite, setRating, type RecipeFull } from '../../lib/db';
-import { Card, Ch, Row, Sm, Xs, H3, Btn, Divider, Tag } from '../../components/ui';
+import { Card, Ch, Row, Sm, Xs, H3, Btn, Divider, Tag, KV } from '../../components/ui';
 import { useTheme } from '../../theme/ThemeProvider';
 
 export default function RecipeDetail() {
@@ -141,6 +141,40 @@ export default function RecipeDetail() {
               ))}
             </Row>
           </Card>
+
+          {recipe.kcal != null || recipe.protein_g != null ? (
+            <Card>
+              <Ch>Nutrition <Text style={{ fontFamily: fonts.body, fontSize: 9, color: c.inkFaint }}>per serving</Text></Ch>
+              <Row>
+                {([
+                  [recipe.kcal, 'cal', c.nut],
+                  [recipe.protein_g, 'protein', c.ink],
+                  [recipe.carbs_g, 'carbs', c.ink],
+                  [recipe.fat_g, 'fat', c.ink],
+                ] as const).map(([v, label, col], i) => (
+                  <View key={label} style={{ flex: 1, alignItems: 'center' }}>
+                    <Text style={{ fontFamily: fonts.displayBold, fontSize: i === 0 ? 20 : 16, color: col }}>
+                      {v != null ? (i === 0 ? String(v) : v + 'g') : '—'}
+                    </Text>
+                    <Xs>{label}</Xs>
+                  </View>
+                ))}
+              </Row>
+              {recipe.sodium_mg != null || recipe.fiber_g != null ? (
+                <>
+                  <Divider />
+                  {recipe.sodium_mg != null ? <KV k="Sodium" v={recipe.sodium_mg + ' mg'} sub /> : null}
+                  {recipe.fiber_g != null ? <KV k="Fiber" v={recipe.fiber_g + ' g'} sub /> : null}
+                  {recipe.sugar_g != null ? <KV k="Sugar" v={recipe.sugar_g + ' g'} sub /> : null}
+                </>
+              ) : null}
+              <Xs style={{ marginTop: 6, color: recipe.nutrition_source === 'published' ? c.ok : c.inkFaint }}>
+                {recipe.nutrition_source === 'published'
+                  ? '✓ Published by the source — not estimated'
+                  : 'Estimated from the ingredients'}
+              </Xs>
+            </Card>
+          ) : null}
 
           <Card>
             <Ch right={<Text style={{ fontFamily: fonts.bold, fontSize: 10, color: c.inkFaint }}>{recipe.ingredients.length}</Text>}>

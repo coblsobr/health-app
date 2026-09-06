@@ -9,17 +9,17 @@ export default function Add() {
   const { c, fonts } = useTheme();
   const router = useRouter();
 
-  const paths: { icon: IconName; bg: string; title: string; sub: string; ready: boolean }[] = [
-    { icon: 'pencil', bg: c.tagA[0], title: 'Type it in', sub: 'Enter a recipe by hand', ready: true },
-    { icon: 'globe', bg: c.tagC[0], title: 'Browse & grab', sub: 'Coming in Phase 2', ready: false },
-    { icon: 'link', bg: c.tagD[0], title: 'Paste a link', sub: 'Coming in Phase 2', ready: false },
-    { icon: 'camera', bg: c.tagE[0], title: 'Photo or screenshot', sub: 'Coming in Phase 2', ready: false },
+  const paths: { icon: IconName; bg: string; title: string; sub: string; ready: boolean; href: string }[] = [
+    { icon: 'link', bg: c.tagD[0], title: 'Paste a link', sub: 'Pull a recipe off any cooking site', ready: true, href: '/recipe/import' },
+    { icon: 'pencil', bg: c.tagA[0], title: 'Type it in', sub: 'Enter a recipe by hand', ready: true, href: '/recipe/new' },
+    { icon: 'globe', bg: c.tagC[0], title: 'Browse & grab', sub: 'Coming next', ready: false, href: '' },
+    { icon: 'camera', bg: c.tagE[0], title: 'Photo or screenshot', sub: 'Coming next', ready: false, href: '' },
   ];
 
   return (
     <Screen title="Add a recipe">
       {paths.map((p) => (
-        <Pressable key={p.title} onPress={p.ready ? () => router.push('/recipe/new') : undefined} disabled={!p.ready}>
+        <Pressable key={p.title} onPress={p.ready ? () => router.push(p.href as never) : undefined} disabled={!p.ready}>
           <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 10, opacity: p.ready ? 1 : 0.5 }}>
             <View
               style={{
