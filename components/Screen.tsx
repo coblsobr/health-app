@@ -35,9 +35,9 @@ export function Screen({
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          paddingHorizontal: 15,
-          paddingTop: 8,
-          paddingBottom: 12,
+          paddingHorizontal: 20,
+          paddingTop: 10,
+          paddingBottom: 18,
         }}
       >
         <Pressable
@@ -56,7 +56,7 @@ export function Screen({
         </Pressable>
 
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={{ fontFamily: fonts.display, fontSize: 19, color: c.ink, letterSpacing: -0.4 }}>{title}</Text>
+          <Text style={{ fontFamily: fonts.display, fontSize: 20, color: c.ink, letterSpacing: -0.4 }}>{title}</Text>
           {subtitle ? (
             <Text style={{ fontFamily: fonts.medium, fontSize: 10, color: c.inkSoft, marginTop: 1 }}>{subtitle}</Text>
           ) : null}
@@ -84,7 +84,7 @@ export function Screen({
 
       <Body
         style={{ flex: 1 }}
-        contentContainerStyle={scroll ? { paddingHorizontal: 14, paddingBottom: 24 } : undefined}
+        contentContainerStyle={scroll ? { paddingHorizontal: 20, paddingBottom: 40 } : undefined}
         showsVerticalScrollIndicator={false}
       >
         {children}

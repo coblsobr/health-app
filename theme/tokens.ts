@@ -55,107 +55,125 @@ export type Palette = {
 };
 
 export const light: Palette = {
-  surface: '#F7F9FC',
+  surface: '#FBFAF8',
   card: '#FFFFFF',
-  cardAlt: '#EFF3F9',
-  line: '#E4EAF2',
-  track: '#E7EDF5',
+  cardAlt: '#F3F1EC',
+  line: '#E7E3DB',
+  track: '#EAE6DE',
 
-  ink: '#131A26',
-  inkSoft: '#5A667A',
-  inkFaint: '#8E9AAC',
+  ink: '#1A1714',
+  inkSoft: '#6B655C',
+  inkFaint: '#A69F94',
 
-  nut: '#FF5C39',
-  nutSoft: '#FFEDE7',
-  fit: '#12C97E',
-  fitSoft: '#E1FAF0',
-  hlth: '#7C5CFF',
-  hlthSoft: '#EFEBFF',
+  nut: '#B3452C',
+  nutSoft: '#F6EBE7',
+  fit: '#5F7A52',
+  fitSoft: '#ECF0E8',
+  hlth: '#7A5568',
+  hlthSoft: '#F3ECF0',
 
-  info: '#2BA8FF',
-  infoSoft: '#E4F3FF',
-  gold: '#FFA820',
-  goldSoft: '#FFF3DC',
-  danger: '#F0475E',
-  dangerSoft: '#FFE9EC',
-  ok: '#12B76A',
+  info: '#4A6B85',
+  infoSoft: '#E9EEF3',
+  gold: '#B8862F',
+  goldSoft: '#F7F0E1',
+  danger: '#A33A2C',
+  dangerSoft: '#F8EAE7',
+  ok: '#5F7A52',
 
-  tagA: ['#E4F8EC', '#0E8A52'],
-  tagB: ['#DDF6F2', '#0C8478'],
-  tagC: ['#E4F1FF', '#1F73C4'],
-  tagD: ['#FFEEE2', '#C2570F'],
-  tagE: ['#EFEAFF', '#6741D9'],
-  tagF: ['#FFF3D9', '#A87503'],
+  tagA: ['#ECF0E8', '#4C6541'],
+  tagB: ['#E7F0EE', '#3F6B62'],
+  tagC: ['#E9EEF3', '#3D5C75'],
+  tagD: ['#F6EBE7', '#96432B'],
+  tagE: ['#F3ECF0', '#6B4A5C'],
+  tagF: ['#F7F0E1', '#8A6620'],
 
-  g1: ['#FF9A6B', '#FF5C39'],
-  g2: ['#5BE3AE', '#12C97E'],
-  g3: ['#FFD066', '#FFA820'],
-  g4: ['#FF9B8A', '#F0475E'],
-  g5: ['#78CCFF', '#2BA8FF'],
-  g6: ['#B49CFF', '#7C5CFF'],
+  g1: ['#D98C6A', '#B3452C'],
+  g2: ['#9DB88C', '#5F7A52'],
+  g3: ['#E0BC72', '#B8862F'],
+  g4: ['#D69A8C', '#A33A2C'],
+  g5: ['#94AEC4', '#4A6B85'],
+  g6: ['#B79BAA', '#7A5568'],
 
-  scrim: 'rgba(6,10,16,0.55)',
-  shadow: '#172B4D',
-  mapBg: '#E8EEF6',
-  mapGrid: 'rgba(90,110,140,0.16)',
+  scrim: 'rgba(26,23,20,0.42)',
+  shadow: '#3E332A',
+  mapBg: '#EEEAE2',
+  mapGrid: 'rgba(120,105,88,0.14)',
 };
 
 export const dark: Palette = {
-  surface: '#0F141C',
-  card: '#1A222E',
-  cardAlt: '#232D3B',
-  line: '#28323F',
-  track: '#28323F',
+  surface: '#141210',
+  card: '#1D1A17',
+  cardAlt: '#26221E',
+  line: '#2E2925',
+  track: '#2E2925',
 
-  ink: '#EDF2FA',
-  inkSoft: '#9AA8BC',
-  inkFaint: '#6C7A8E',
+  ink: '#F2EEE7',
+  inkSoft: '#A9A196',
+  inkFaint: '#7A7268',
 
-  nut: '#FF7154',
-  nutSoft: '#3C1F17',
-  fit: '#2EDC94',
-  fitSoft: '#0F3227',
-  hlth: '#9B84FF',
-  hlthSoft: '#241E42',
+  nut: '#D9694C',
+  nutSoft: '#2E1D18',
+  fit: '#8AA87A',
+  fitSoft: '#1B2418',
+  hlth: '#B08CA0',
+  hlthSoft: '#251C21',
 
-  info: '#4DB8FF',
-  infoSoft: '#0F2B3E',
-  gold: '#FFC44D',
-  goldSoft: '#372814',
-  danger: '#FF6B7E',
-  dangerSoft: '#3B1C23',
-  ok: '#2EDC94',
+  info: '#7CA0BD',
+  infoSoft: '#182229',
+  gold: '#D9A94E',
+  goldSoft: '#2A2116',
+  danger: '#D9705C',
+  dangerSoft: '#2E1B18',
+  ok: '#8AA87A',
 
-  tagA: ['#123021', '#4ADE80'],
-  tagB: ['#0F2E2C', '#45D6C6'],
-  tagC: ['#12283F', '#68B6F7'],
-  tagD: ['#3B2415', '#FF9A5B'],
-  tagE: ['#241E42', '#AC93FF'],
-  tagF: ['#372814', '#FFC44D'],
+  tagA: ['#1B2418', '#9BBA8A'],
+  tagB: ['#152220', '#7FB3A8'],
+  tagC: ['#182229', '#8FB2CC'],
+  tagD: ['#2E1D18', '#D9836A'],
+  tagE: ['#251C21', '#C09CB0'],
+  tagF: ['#2A2116', '#D9B36A'],
 
-  g1: ['#E2724A', '#C6401F'],
-  g2: ['#33BC86', '#0E8C58'],
-  g3: ['#E0AA45', '#C07C12'],
-  g4: ['#D9705F', '#B32F45'],
-  g5: ['#4F9AD1', '#1B76B8'],
-  g6: ['#8570D6', '#5D42C4'],
+  g1: ['#A85A3E', '#7A3520'],
+  g2: ['#6E8A5F', '#425738'],
+  g3: ['#A8823C', '#75581F'],
+  g4: ['#A85A4C', '#75281F'],
+  g5: ['#5A7994', '#36485A'],
+  g6: ['#7E6070', '#54394A'],
 
   scrim: 'rgba(0,0,0,0.6)',
   shadow: '#000000',
-  mapBg: '#18202B',
-  mapGrid: 'rgba(255,255,255,0.07)',
+  mapBg: '#1F1C19',
+  mapGrid: 'rgba(255,255,255,0.06)',
 };
 
 export const palettes: Record<ThemeName, Palette> = { light, dark };
 
-/** Outfit for headings + numbers, Inter for everything else. */
+/**
+ * A serif with character over a quiet grotesque. The previous pairing
+ * (geometric sans + Inter) is the default look of generated UI; Fraunces has
+ * an actual voice, which is what the screens were missing.
+ */
 export const fonts = {
-  display: 'Outfit_600SemiBold',
-  displayBold: 'Outfit_700Bold',
-  body: 'Inter_400Regular',
-  medium: 'Inter_500Medium',
-  semi: 'Inter_600SemiBold',
-  bold: 'Inter_700Bold',
+  display: 'Fraunces_600SemiBold',
+  displayBold: 'Fraunces_700Bold',
+  body: 'AlbertSans_400Regular',
+  medium: 'AlbertSans_500Medium',
+  semi: 'AlbertSans_600SemiBold',
+  bold: 'AlbertSans_700Bold',
+};
+
+/**
+ * A scale with real contrast. The old set ran 9.5-20px, which is exactly why
+ * every screen read at one volume: a designed page has a loud voice and a
+ * quiet one, not six middling ones.
+ */
+export const type = {
+  hero: 46,     // the single number a screen exists to show
+  title: 26,
+  section: 17,
+  body: 14,
+  small: 12,
+  micro: 10.5,
 };
 
 /** Shared spacing / radius scale — identical across themes. */

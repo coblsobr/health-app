@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, type ColorValue } from 'react-native';
+import { View, Text, StyleSheet, type ColorValue } from 'react-native';
 import { Icon, type IconName } from './Icon';
 import type { Palette } from '../theme/tokens';
 import { fonts } from '../theme/tokens';
@@ -18,14 +18,16 @@ export function tabScreenOptions(c: Palette, accent: string) {
     tabBarActiveTintColor: accent,
     tabBarInactiveTintColor: c.inkFaint,
     tabBarStyle: {
-      backgroundColor: c.card,
+      backgroundColor: c.surface,       // same ground as the page, not a slab
       borderTopColor: c.line,
-      borderTopWidth: 1,
-      height: 62,
-      paddingTop: 6,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      height: 60,
+      paddingTop: 8,
       paddingBottom: 8,
+      elevation: 0,
+      shadowOpacity: 0,
     },
-    tabBarLabelStyle: { fontFamily: fonts.semi, fontSize: 8.6 },
+    tabBarLabelStyle: { fontFamily: fonts.body, fontSize: 10, letterSpacing: 0 },
   } as const;
 }
 
@@ -34,26 +36,26 @@ export function tabIcon(name: IconName) {
   return ({ color }: { color: ColorValue }) => <Icon name={name} size={19} color={String(color)} />;
 }
 
-/** The raised centre action (Add / Log). */
+/**
+ * The centre action. Marked by an outline rather than a filled, floating
+ * circle — a raised blob is the loudest thing on the screen and fights
+ * everything above it.
+ */
 export function centreIcon(name: IconName, accent: string) {
   return () => (
     <View
       style={{
-        width: 34,
-        height: 34,
-        borderRadius: 17,
-        backgroundColor: accent,
+        width: 30,
+        height: 30,
+        borderRadius: 15,
+        borderWidth: 1,
+        borderColor: accent,
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: -4,
-        shadowColor: accent,
-        shadowOpacity: 0.45,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 4,
+        marginTop: -2,
       }}
     >
-      <Icon name={name} size={19} color="#fff" strokeWidth={2.7} />
+      <Icon name={name} size={15} color={accent} strokeWidth={2} />
     </View>
   );
 }

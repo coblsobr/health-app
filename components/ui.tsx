@@ -298,3 +298,91 @@ export function Photo({ g, height = 96, children }: { g: [string, string]; heigh
 const s = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 });
+
+/* ── editorial primitives ───────────────────────────────────
+   Content sits on the page and is separated by rules, rather than every
+   element living in its own bordered, shadowed card. Cards are for things
+   that are genuinely objects; most of a screen is not.
+   ─────────────────────────────────────────────────────────── */
+
+/** A hairline. The main structural device in place of card borders. */
+export function Rule({ style }: { style?: ViewStyle }) {
+  const { c } = useTheme();
+  return <View style={[{ height: StyleSheet.hairlineWidth, backgroundColor: c.line }, style]} />;
+}
+
+/** A quiet section heading in the serif — sentence case, not tracked caps. */
+export function SectionTitle({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
+  const { c, fonts } = useTheme();
+  return (
+    <View style={[s.row, { marginBottom: 6 }]}>
+      <Text style={{ fontFamily: fonts.display, fontSize: 17, color: c.ink, letterSpacing: -0.2 }}>{children}</Text>
+      {right}
+    </View>
+  );
+}
+
+/** The one number a screen is about. */
+export function Hero({
+  value, caption, tone,
+}: { value: string; caption: string; tone?: string }) {
+  const { c, fonts } = useTheme();
+  return (
+    <View>
+      <Text style={{ fontFamily: fonts.display, fontSize: 46, lineHeight: 52, color: tone ?? c.ink, letterSpacing: -1.5 }}>
+        {value}
+      </Text>
+      <Text style={{ fontFamily: fonts.body, fontSize: 12, color: c.inkSoft, marginTop: -2 }}>{caption}</Text>
+    </View>
+  );
+}
+
+/** A 2px progress rule — a line, not a chunky pill. */
+export function Meter({ pct, tone }: { pct: number; tone?: string }) {
+  const { c } = useTheme();
+  return (
+    <View style={{ height: 2, backgroundColor: c.track, overflow: 'hidden' }}>
+      <View style={{ width: `${Math.min(100, Math.max(0, pct))}%`, height: '100%', backgroundColor: tone ?? c.nut }} />
+    </View>
+  );
+}
+
+/** A row of text with a figure on the right — the workhorse of a list. */
+export function LineItem({
+  title, meta, value, dim, onPress, right,
+}: {
+  title: string; meta?: string; value?: string; dim?: boolean;
+  onPress?: () => void; right?: React.ReactNode;
+}) {
+  const { c, fonts } = useTheme();
+  const body = (
+    <View style={[s.row, { paddingVertical: 11, alignItems: 'flex-start' }]}>
+      <View style={{ flex: 1, paddingRight: 12 }}>
+        <Text
+          numberOfLines={1}
+          style={{ fontFamily: fonts.body, fontSize: 14, color: dim ? c.inkFaint : c.ink }}
+        >
+          {title}
+        </Text>
+        {meta ? (
+          <Text style={{ fontFamily: fonts.body, fontSize: 11.5, color: c.inkFaint, marginTop: 2 }}>{meta}</Text>
+        ) : null}
+      </View>
+      {value ? (
+        <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: c.inkSoft, marginTop: 1 }}>{value}</Text>
+      ) : null}
+      {right}
+    </View>
+  );
+  return onPress ? <Pressable onPress={onPress}>{body}</Pressable> : body;
+}
+
+/** A restrained text action. Most screens do not need a filled button. */
+export function TextAction({ label, onPress, tone }: { label: string; onPress?: () => void; tone?: string }) {
+  const { c, fonts } = useTheme();
+  return (
+    <Pressable onPress={onPress} style={{ paddingVertical: 12 }}>
+      <Text style={{ fontFamily: fonts.semi, fontSize: 13.5, color: tone ?? c.nut }}>{label}</Text>
+    </Pressable>
+  );
+}

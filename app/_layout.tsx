@@ -8,8 +8,10 @@ import { StatusBar } from 'expo-status-bar';
 // is a hard bundling error, so those packages are deliberately not installed.
 import { Drawer, DrawerContentScrollView, type DrawerContentComponentProps } from 'expo-router/drawer';
 import { useFonts } from 'expo-font';
-import { Outfit_600SemiBold, Outfit_700Bold } from '@expo-google-fonts/outfit';
-import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
+import { Fraunces_600SemiBold, Fraunces_700Bold } from '@expo-google-fonts/fraunces';
+import {
+  AlbertSans_400Regular, AlbertSans_500Medium, AlbertSans_600SemiBold, AlbertSans_700Bold,
+} from '@expo-google-fonts/albert-sans';
 
 import { ThemeProvider, useTheme } from '../theme/ThemeProvider';
 import { Icon, type IconName } from '../components/Icon';
@@ -110,12 +112,12 @@ function Root() {
 
 export default function RootLayout() {
   const [loaded] = useFonts({
-    Outfit_600SemiBold,
-    Outfit_700Bold,
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+    Fraunces_600SemiBold,
+    Fraunces_700Bold,
+    AlbertSans_400Regular,
+    AlbertSans_500Medium,
+    AlbertSans_600SemiBold,
+    AlbertSans_700Bold,
   });
 
   // Warm the database, but never block the UI on it. Screens that need storage
