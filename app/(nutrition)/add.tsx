@@ -13,7 +13,7 @@ export default function Add() {
     { icon: 'link', bg: c.tagD[0], title: 'Paste a link', sub: 'Pull a recipe off any cooking site', ready: true, href: '/recipe/import' },
     { icon: 'pencil', bg: c.tagA[0], title: 'Type it in', sub: 'Enter a recipe by hand', ready: true, href: '/recipe/new' },
     { icon: 'globe', bg: c.tagC[0], title: 'Browse & grab', sub: 'Coming next', ready: false, href: '' },
-    { icon: 'camera', bg: c.tagE[0], title: 'Photo or screenshot', sub: 'Coming next', ready: false, href: '' },
+    { icon: 'camera', bg: c.tagE[0], title: 'Photo or screenshot', sub: 'Cookbook page, screenshot, index card', ready: true, href: '/recipe/scan' },
   ];
 
   return (

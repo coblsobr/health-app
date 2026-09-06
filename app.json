@@ -22,7 +22,13 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png",
         "backgroundColor": "#FF5C39"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "ios": {
       "supportsTablet": true,
@@ -36,7 +42,14 @@
       "expo-router",
       "expo-font",
       "expo-updates",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Used only when you pick a photo for a recipe.",
+          "cameraPermission": "Used to photograph a cookbook page so the recipe can be read."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
