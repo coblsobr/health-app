@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -8,6 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 // is a hard bundling error, so those packages are deliberately not installed.
 import { Drawer, DrawerContentScrollView, type DrawerContentComponentProps } from 'expo-router/drawer';
 import { useFonts } from 'expo-font';
+import * as Updates from 'expo-updates';
 import { Fraunces_600SemiBold, Fraunces_700Bold, Fraunces_600SemiBold_Italic } from '@expo-google-fonts/fraunces';
 import { Caveat_600SemiBold } from '@expo-google-fonts/caveat';
 import {
@@ -142,6 +143,29 @@ export default function RootLayout() {
   // rather than the whole app.
   useEffect(() => {
     initDb().catch(() => {});
+  }, []);
+
+  // Take an over-the-air update the moment it lands, rather than downloading it
+  // now and applying it at some later launch. The default behaviour means a
+  // change takes two restarts to appear, which reads as "it didn't update".
+  // Safe against a loop: after reloading, the new bundle is current, so the
+  // next check finds nothing.
+  useEffect(() => {
+    if (__DEV__ || Platform.OS === 'web') return;
+    let alive = true;
+    (async () => {
+      try {
+        const check = await Updates.checkForUpdateAsync();
+        if (!alive || !check.isAvailable) return;
+        await Updates.fetchUpdateAsync();
+        if (!alive) return;
+        await Updates.reloadAsync();
+      } catch {
+        // Offline, or the update server is unreachable. Keep running on the
+        // bundle already installed — never block launch on this.
+      }
+    })();
+    return () => { alive = false; };
   }, []);
 
   return (

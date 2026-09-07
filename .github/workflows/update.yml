@@ -27,5 +27,9 @@ jobs:
 
       - run: npm ci
 
-      - name: Publish to the preview channel
-        run: eas update --branch preview --message "${{ github.event.head_commit.message }}" --non-interactive
+      # --branch main, because the `preview` channel the APK was built on is
+      # mapped to the `main` branch. Publishing to a branch no channel points
+      # at succeeds, reports success, and reaches no phone.
+      # --environment is required in --non-interactive mode.
+      - name: Publish the update
+        run: eas update --branch main --environment production --message "${{ github.event.head_commit.message }}" --non-interactive

@@ -30,6 +30,20 @@ Then open http://localhost:8081. For the phone, see "Shipping" below.
 - `babel.config.js` uses `react-native-worklets/plugin`, **not**
   `react-native-reanimated/plugin` — Reanimated 4 moved it. Must stay last.
 
+## Shipping — read this before publishing
+
+The APK is built on channel **`preview`**, and that channel is mapped to the
+**`main`** branch. Always `eas update --branch main --environment production`.
+
+**Publishing to a branch no channel points at succeeds, prints a green tick,
+and reaches no phone.** It cost a whole session of work that never left the
+laptop, so verify the mapping with `eas channel:view preview`, not just
+`eas update:list`.
+
+Native changes (a new native module, an SDK bump) change the fingerprint
+runtimeVersion and cannot ship over the air — they need a new APK, and the
+phone stays on its last compatible update until that is installed.
+
 ## Right now: Recipes is the app
 
 `app/recipes.tsx` is the landing screen and the only one being worked on. It is
