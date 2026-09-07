@@ -1,24 +1,26 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
-import Svg, { Polyline } from 'react-native-svg';
+import { View, Text, Pressable, StyleSheet, type TextStyle } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 
 /**
  * The Fitness design language.
  *
- * Nutrition is a cookbook: photos, warm paper, a serif. Fitness is a training
- * logbook: a black spine, condensed caps, and figures in a monospace so the
- * columns line up the way they do on a printed results sheet.
+ * Nutrition is a cookbook. Fitness is a training logbook: concrete-grey paper,
+ * a charcoal spine, one warm accent, and figures in a monospace.
  *
- * Rules for this world, each one a reaction to what the section looked like
- * before:
- *   - No cards. Rows sit on the page ground, divided by hairlines that run the
- *     full width. Floating rounded slabs are what made it read as generated.
- *   - No centred hero figure. The number a screen exists to show goes at the
- *     end of a line, in a column with the others.
- *   - No standalone chart panel. A magnitude is drawn as a bar inside the row
- *     it belongs to, so the chart and the table are one object.
- *   - Tight vertical rhythm. Rows are ~30px, not ~56px with 16px of air.
+ * Rules for this world:
+ *
+ *   - No cards, no centred hero figure, no chart in a panel of its own, no
+ *     segmented pill row, no bottom tab bar. Those five shapes are what made
+ *     the section read as generated.
+ *   - **Every block on a screen must look different from the block above it.**
+ *     A run of sections sharing a heading, a rule and a row height is the same
+ *     failure as a run of cards: the eye finds no hierarchy and reads all of it
+ *     as filler. So — one oversized `<Statement>`, one dense `<MetaLine>`, one
+ *     `<Session>` list, one `<Aside>`. Never four tables.
+ *   - Say less. A screen carries three or four facts, not twenty. Anything
+ *     secondary goes on a MetaLine, not in a labelled row of its own.
+ *   - Rules belong to lists. A hairline under every single thing is noise.
  */
 
 export function useFit() {
@@ -28,30 +30,35 @@ export function useFit() {
 
 const HAIR = StyleSheet.hairlineWidth;
 
-/** Cancels the page padding so a rule reaches both edges. */
-const BLEED = -14;
+/** Cancels the page padding so a rule or bar reaches both edges. */
+const BLEED = -16;
 
 /** A figure. Monospaced and tabular so digits sit in a true column. */
 export function Fig({
   children,
   size = 13,
   tone,
-  weight = 'med',
+  weight = 'reg',
   style,
 }: {
   children: React.ReactNode;
   size?: number;
   tone?: string;
-  weight?: 'reg' | 'med' | 'semi';
+  weight?: 'light' | 'reg' | 'med';
   style?: TextStyle;
 }) {
   const { c, fonts } = useFit();
   const family =
-    weight === 'semi' ? fonts.fitMonoSemi : weight === 'med' ? fonts.fitMonoMed : fonts.fitMono;
+    weight === 'med' ? fonts.fitMonoMed : weight === 'light' ? fonts.fitMonoLight : fonts.fitMono;
   return (
     <Text
       style={[
-        { fontFamily: family, fontSize: size, color: tone ?? c.ink, fontVariant: ['tabular-nums'] },
+        {
+          fontFamily: family,
+          fontSize: size,
+          color: tone ?? c.fitText,
+          fontVariant: ['tabular-nums'],
+        },
         style,
       ]}
     >
@@ -60,207 +67,170 @@ export function Fig({
   );
 }
 
-/** Condensed caps. Labels, mastheads, column heads — everything structural. */
-export function Caps({
+/** Words. Archivo, in one of four weights. */
+export function T({
   children,
-  size = 12,
+  size = 13,
   tone,
-  track = 0.6,
+  weight = 'body',
   style,
   numberOfLines,
 }: {
   children: React.ReactNode;
   size?: number;
   tone?: string;
-  track?: number;
+  weight?: 'body' | 'label' | 'bold' | 'heavy';
   style?: TextStyle;
   numberOfLines?: number;
 }) {
   const { c, fonts } = useFit();
+  const family =
+    weight === 'heavy'
+      ? fonts.fitDisplayHeavy
+      : weight === 'bold'
+        ? fonts.fitDisplay
+        : weight === 'label'
+          ? fonts.fitLabel
+          : fonts.fitBody;
   return (
     <Text
       numberOfLines={numberOfLines}
-      style={[
-        { fontFamily: fonts.fitDisplay, fontSize: size, color: tone ?? c.ink, letterSpacing: track },
-        style,
-      ]}
+      style={[{ fontFamily: family, fontSize: size, color: tone ?? c.fitText }, style]}
     >
       {children}
     </Text>
   );
 }
 
-/** A full-bleed hairline. */
-export function Rule({ strong = false, style }: { strong?: boolean; style?: ViewStyle }) {
+/** A full-bleed hairline. Used between list rows, nowhere else. */
+export function Rule() {
   const { c } = useFit();
-  return (
-    <View
-      style={[
-        {
-          height: strong ? 1.5 : HAIR,
-          backgroundColor: strong ? c.ink : c.line,
-          marginHorizontal: BLEED,
-        },
-        style,
-      ]}
-    />
-  );
+  return <View style={{ height: HAIR, backgroundColor: c.fitLine, marginHorizontal: BLEED }} />;
 }
 
 /**
- * A column head: tiny caps over a heavy rule, the way a ledger page starts.
- * `right` sits over the figures — a second heading, or a Switcher.
+ * A quiet section label. Deliberately not a heading with a heavy rule under
+ * it: stack four of those and the screen has four equal voices and therefore
+ * no hierarchy at all.
  */
-export function Head({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
+export function Label({ children, right }: { children: string; right?: React.ReactNode }) {
   const { c } = useFit();
   return (
-    <View style={{ marginTop: 20 }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-          paddingBottom: 4,
-        }}
-      >
-        <Caps size={13} tone={c.inkSoft} track={1.4}>
-          {children}
-        </Caps>
-        {typeof right === 'string' ? (
-          <Caps size={11} tone={c.inkFaint} track={1.2}>
-            {right}
-          </Caps>
-        ) : (
-          right
-        )}
-      </View>
-      <Rule strong />
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        justifyContent: 'space-between',
+        marginTop: 26,
+        marginBottom: 7,
+      }}
+    >
+      <T size={9.5} weight="label" tone={c.fitTextFaint} style={{ letterSpacing: 1.6 }}>
+        {children.toUpperCase()}
+      </T>
+      {right}
     </View>
   );
 }
 
 /**
- * One ledger line: label, an optional magnitude bar, and a right-aligned
- * figure. `pct` (0-1) fills the bar; leave it out and the row is plain text.
+ * The one loud thing on a screen: an oversized figure set inside a sentence.
+ * A number read as part of a line is not the same shape as a number floating
+ * in the middle of a panel, which is the shape being avoided here.
  */
-export function Line({
-  label,
+export function Statement({
+  lead,
   value,
-  unit,
-  pct,
+  trail,
   tone,
-  sub,
-  onPress,
 }: {
-  label: string;
+  lead: string;
   value: string;
-  unit?: string;
-  pct?: number;
+  trail?: string;
   tone?: string;
-  sub?: string;
-  onPress?: () => void;
 }) {
   const { c } = useFit();
-  const accent = tone ?? c.fit;
-
-  const body = (
-    <>
-      <View style={{ flexDirection: 'row', alignItems: 'center', height: sub ? 38 : 30, gap: 10 }}>
-        <View style={{ width: 78 }}>
-          <Caps size={12.5} tone={c.inkSoft} track={0.9}>
-            {label}
-          </Caps>
-          {sub ? <Fig size={8.5} tone={c.inkFaint}>{sub}</Fig> : null}
-        </View>
-
-        {pct != null ? (
-          <View style={{ flex: 1, height: 7, backgroundColor: c.track }}>
-            <View
-              style={{
-                width: `${Math.round(Math.max(0, Math.min(1, pct)) * 100)}%`,
-                height: 7,
-                backgroundColor: accent,
-              }}
-            />
-          </View>
-        ) : (
-          <View style={{ flex: 1 }} />
-        )}
-
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'baseline',
-            minWidth: 76,
-            justifyContent: 'flex-end',
-          }}
-        >
-          <Fig size={13.5} weight="semi">
-            {value}
-          </Fig>
-          {unit ? (
-            <Fig size={9} tone={c.inkFaint} style={{ marginLeft: 3 }}>
-              {unit}
-            </Fig>
-          ) : null}
-        </View>
-      </View>
-      <Rule />
-    </>
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', marginTop: 20 }}>
+      <T size={14} tone={c.fitTextSoft} style={{ marginRight: 9 }}>
+        {lead}
+      </T>
+      <Fig size={42} weight="med" tone={tone} style={{ letterSpacing: -1.6 }}>
+        {value}
+      </Fig>
+      {trail ? (
+        <T size={13} tone={c.fitTextSoft} style={{ marginLeft: 9 }}>
+          {trail}
+        </T>
+      ) : null}
+    </View>
   );
+}
 
-  return onPress ? <Pressable onPress={onPress}>{body}</Pressable> : <View>{body}</View>;
+/** A full-bleed progress rule. Sits under a Statement, never inside a row. */
+export function Bar({ pct, tone }: { pct: number; tone?: string }) {
+  const { c } = useFit();
+  return (
+    <View style={{ height: 3, backgroundColor: c.fitTrack, marginHorizontal: BLEED, marginTop: 11 }}>
+      <View
+        style={{
+          width: `${Math.round(Math.max(0, Math.min(1, pct)) * 100)}%`,
+          height: 3,
+          backgroundColor: tone ?? c.fit,
+        }}
+      />
+    </View>
+  );
 }
 
 /**
- * A logged session. Time in the left gutter, the session in the middle, the
- * figure in the same right-hand column every other number uses.
+ * Every secondary number on the screen, on one line. Four facts that each had
+ * a labelled row of their own is exactly the spread-out sameness this section
+ * had too much of; as one line they cost four words and read in a glance.
  */
-export function Entry({
+export function MetaLine({ children }: { children: React.ReactNode }) {
+  const { c } = useFit();
+  return (
+    <Fig size={11} weight="light" tone={c.fitTextSoft} style={{ marginTop: 13, lineHeight: 17 }}>
+      {children}
+    </Fig>
+  );
+}
+
+/** A logged session. Time in the gutter, figure on the right. */
+export function Session({
   time,
   name,
   meta,
   value,
-  unit = 'cal',
   onPress,
 }: {
   time: string;
   name: string;
-  meta: string;
+  meta?: string;
   value: string;
-  unit?: string;
   onPress?: () => void;
 }) {
   const { c } = useFit();
   const body = (
     <>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 8, gap: 10 }}>
-        <Fig size={11} tone={c.fit} weight="semi" style={{ width: 44, marginTop: 2 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 11 }}>
+        <Fig size={10.5} tone={c.fitTextFaint} style={{ width: 38 }}>
           {time}
         </Fig>
         <View style={{ flex: 1 }}>
-          <Caps size={15} track={0.5} numberOfLines={1}>
+          <T size={14} weight="label" numberOfLines={1}>
             {name}
-          </Caps>
-          <Fig size={9.5} tone={c.inkFaint} style={{ marginTop: 1 }}>
-            {meta}
-          </Fig>
+          </T>
+          {meta ? (
+            <Fig size={9.5} weight="light" tone={c.fitTextFaint} style={{ marginTop: 2 }}>
+              {meta}
+            </Fig>
+          ) : null}
         </View>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'baseline',
-            minWidth: 76,
-            justifyContent: 'flex-end',
-          }}
-        >
-          <Fig size={13.5} weight="semi">
-            {value}
-          </Fig>
-          <Fig size={9} tone={c.inkFaint} style={{ marginLeft: 3 }}>
-            {unit}
-          </Fig>
-        </View>
+        <Fig size={13} weight="med">
+          {value}
+        </Fig>
       </View>
       <Rule />
     </>
@@ -269,10 +239,23 @@ export function Entry({
 }
 
 /**
- * An inline switcher, meant to sit on the right of a column head. A pill row
- * of options across the top of a screen is the single most recognisable
- * generated-UI shape there is, so this world does not have one.
+ * A short sentence marked by a bar in the margin. This is how the section says
+ * something rather than tabulating it — the one place the two worlds talk to
+ * each other should read as a remark, not as another data row.
  */
+export function Aside({ children }: { children: React.ReactNode }) {
+  const { c } = useFit();
+  return (
+    <View style={{ flexDirection: 'row', marginTop: 26, gap: 11 }}>
+      <View style={{ width: 2, backgroundColor: c.fit }} />
+      <T size={13.5} weight="label" style={{ flex: 1, lineHeight: 19 }}>
+        {children}
+      </T>
+    </View>
+  );
+}
+
+/** Inline switcher. Sits on a Label's right, never as a pill row of its own. */
 export function Switcher({
   options,
   active,
@@ -284,77 +267,63 @@ export function Switcher({
 }) {
   const { c } = useFit();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 13 }}>
       {options.map((o, i) => (
         <Pressable key={o} onPress={() => onChange?.(i)} hitSlop={8}>
-          <Caps
-            size={12}
-            track={1}
-            tone={i === active ? c.fit : c.inkFaint}
-            style={
-              i === active
-                ? { borderBottomWidth: 1.5, borderBottomColor: c.fit, paddingBottom: 1 }
-                : undefined
-            }
+          <T
+            size={11}
+            weight={i === active ? 'bold' : 'body'}
+            tone={i === active ? c.fit : c.fitTextFaint}
           >
             {o}
-          </Caps>
+          </T>
         </Pressable>
       ))}
     </View>
   );
 }
 
-/** A sparkline that lives inside a row, not in a panel of its own. */
-export function Spark({
-  values,
-  tone,
-  height = 22,
+/** A two-column list row. For short lists — three or four, not eight. */
+export function Row({
+  label,
+  value,
+  unit,
+  onPress,
 }: {
-  values: number[];
-  tone?: string;
-  height?: number;
+  label: string;
+  value: string;
+  unit?: string;
+  onPress?: () => void;
 }) {
   const { c } = useFit();
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const span = max - min || 1;
-  const w = 100;
-  const pts = values
-    .map((v, i) => {
-      const x = (i / Math.max(1, values.length - 1)) * w;
-      const y = height - ((v - min) / span) * (height - 2) - 1;
-      return x.toFixed(1) + ',' + y.toFixed(1);
-    })
-    .join(' ');
-  return (
-    <Svg width="100%" height={height} viewBox={'0 0 ' + w + ' ' + height} preserveAspectRatio="none">
-      <Polyline
-        points={pts}
-        fill="none"
-        stroke={tone ?? c.fit}
-        strokeWidth={1.2}
-        vectorEffect="non-scaling-stroke"
-      />
-    </Svg>
+  const body = (
+    <>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', height: 32, gap: 10 }}>
+        <T size={13.5} weight="label" style={{ flex: 1 }}>
+          {label}
+        </T>
+        <Fig size={13} weight="med">
+          {value}
+        </Fig>
+        {unit ? (
+          <Fig size={9.5} weight="light" tone={c.fitTextFaint} style={{ width: 42 }}>
+            {unit}
+          </Fig>
+        ) : null}
+      </View>
+      <Rule />
+    </>
   );
+  return onPress ? <Pressable onPress={onPress}>{body}</Pressable> : <View>{body}</View>;
 }
 
-/** A footnote. Left-aligned and quiet — never a centred italic apology. */
+/** A footnote. Left-aligned and quiet. */
 export function Note({ children }: { children: React.ReactNode }) {
-  const { c, fonts } = useFit();
+  const { c } = useFit();
   return (
-    <Text
-      style={{
-        fontFamily: fonts.fitMono,
-        fontSize: 9.5,
-        lineHeight: 15,
-        color: c.inkFaint,
-        marginTop: 18,
-      }}
-    >
+    <T size={11} tone={c.fitTextFaint} style={{ marginTop: 24, lineHeight: 17 }}>
       {children}
-    </Text>
+    </T>
   );
 }
 
@@ -373,17 +342,22 @@ export function FitBtn({
     <Pressable
       onPress={onPress}
       style={{
-        marginTop: 20,
-        paddingVertical: 12,
+        marginTop: 24,
+        paddingVertical: 13,
         alignItems: 'center',
         backgroundColor: ghost ? 'transparent' : c.fit,
-        borderWidth: ghost ? 1 : 0,
-        borderColor: c.line,
+        borderWidth: ghost ? HAIR : 0,
+        borderColor: c.fitLine,
       }}
     >
-      <Caps size={15} track={1.6} tone={ghost ? c.inkSoft : '#fff'}>
+      <T
+        size={13}
+        weight="bold"
+        tone={ghost ? c.fitTextSoft : '#fff'}
+        style={{ letterSpacing: 0.3 }}
+      >
         {label}
-      </Caps>
+      </T>
     </Pressable>
   );
 }

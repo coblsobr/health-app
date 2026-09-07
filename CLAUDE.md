@@ -42,8 +42,9 @@ not carry a primitive across the boundary.
 | Idea | a cookbook | a training logbook |
 | Chrome | filled section-coloured app bar, centred title | black spine down the left edge, no bar |
 | Nav | bottom tabs | numbered rail in the spine |
-| Type | Fraunces + Albert Sans | Bebas Neue + IBM Plex Mono |
-| Colour | red on cream | cobalt `#2247FF` on cream, black spine |
+| Type | Fraunces + Albert Sans | Archivo + DM Mono |
+| Ground | warm cream `#FFFDF9` | concrete grey `fitPaper`, its own ink and rules |
+| Colour | red on cream | burnt orange `#CC4E14`, charcoal spine |
 | Shapes | photos, rules, the odd card | hairline rules only, no cards at all |
 | Figures | serif, in place | monospace, right-aligned in one column |
 | Primitives | `components/ui.tsx`, `Screen` | `components/fit.tsx`, `fitChrome.tsx` |
@@ -62,11 +63,25 @@ how every single app made with Claude looks."*
 - **No segmented control and no bottom bar.** Period switching is `<Switcher>`,
   small caps sitting on the right of a column head. Section switching is the
   rail. Both were pill-row shapes; both are gone.
-- **Tight rhythm.** Rows are ~30px. Not 56 with 16 of air.
-- **Figures are monospaced and tabular** (`<Fig>`), labels are condensed caps
-  (`<Caps>`). Columns lining up is the whole point.
-- Primitives: `Head`, `Line`, `Entry`, `Rule`, `Fig`, `Caps`, `Switcher`,
-  `Spark`, `Note`, `FitBtn`, and `FitScreen` / `FitRail` for the chrome.
+- **Every block must look different from the block above it.** This is the
+  rule that matters most, and the one that took three tries to get right. A run
+  of sections that share a heading, a rule and a row height fails exactly the
+  way a run of cards fails: nothing is louder than anything else, so the eye
+  finds no hierarchy and reads all of it as noise. A screen gets **one**
+  `<Statement>`, **one** `<MetaLine>`, **one** list, **one** `<Aside>`.
+- **Say less.** Three or four facts per screen. Anything secondary goes on the
+  MetaLine — steps, active minutes and distance are one line, not three rows.
+  If a section needs a fifth block, it probably needs its own screen.
+- **Rules belong to lists.** A hairline under every single thing is noise.
+- **Figures are monospaced and tabular** (`<Fig>`); words are Archivo (`<T>`).
+- **Fitness owns its whole palette**, not just an accent: `fitPaper`,
+  `fitText`, `fitTextSoft`, `fitTextFaint`, `fitLine`, `fitTrack`, `fitInk`.
+  Never use `c.surface`, `c.ink` or `c.line` on a Fitness screen — borrowing
+  Nutrition's warm cream and then putting a cool accent on it is why the
+  colours read as mismatched for two passes.
+- Primitives: `Statement`, `Bar`, `MetaLine`, `Label`, `Session`, `Aside`,
+  `Row`, `Rule`, `Fig`, `T`, `Switcher`, `Note`, `FitBtn`, and
+  `FitScreen` / `FitRail` for the chrome.
 - The rail navigates with `navigation.dispatch({ ...CommonActions.navigate(route),
   target: state.key })`. **`navigation.navigate()` silently does nothing here** —
   a navigator's own navigation object navigates in its *parent*, so it asked the

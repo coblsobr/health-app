@@ -6,22 +6,24 @@ import { useNavigation, useRouter } from 'expo-router';
 // way to reach it. Importing from @react-navigation/* is a bundling error.
 import { CommonActions } from 'expo-router/react-navigation';
 import { useTheme } from '../theme/ThemeProvider';
-import { Caps, Fig, Rule } from './fit';
+import { Fig, T } from './fit';
 
 /**
  * Fitness chrome.
  *
- * Nutrition wears a filled coloured app bar with a centred title. Fitness
- * deliberately has neither: the navigation is a black spine down the left edge
- * and the title is typographic, set flush left on the page itself. That single
- * move is what stops the two worlds reading as two tabs of one app.
+ * Nutrition wears a filled coloured app bar with a centred title. Fitness has
+ * neither: navigation is a charcoal spine down the left edge and the title is
+ * typographic, flush left on the page. The world also paints its own ground
+ * (`fitPaper`) rather than borrowing Nutrition's warm cream — a cool accent on
+ * warm paper was why the colours never looked settled.
  */
 
-export const RAIL_W = 52;
+const HAIRLINE = StyleSheet.hairlineWidth;
+
+export const RAIL_W = 50;
 
 /**
- * The spine. A numbered index of the section, the way a logbook's tabs are
- * numbered, rather than a row of icons along the bottom of the screen.
+ * The spine. A numbered index, the way a logbook's tabs are numbered.
  *
  * Typed loosely on purpose: expo-router vendors its own copy of the
  * react-navigation types, and importing BottomTabBarProps from
@@ -40,8 +42,8 @@ export function FitRail({ state, descriptors, navigation }: any) {
         backgroundColor: c.fitInk,
         // In dark mode the spine and the page are both nearly black, so the
         // separation has to come from a rule rather than from contrast alone.
-        borderRightWidth: StyleSheet.hairlineWidth,
-        borderRightColor: c.line,
+        borderRightWidth: HAIRLINE,
+        borderRightColor: c.fitLine,
         paddingTop: insets.top + 10,
         paddingBottom: insets.bottom + 12,
       }}
@@ -57,13 +59,13 @@ export function FitRail({ state, descriptors, navigation }: any) {
         style={{ alignItems: 'center', paddingVertical: 10, gap: 4 }}
       >
         {[0, 1, 2].map((i) => (
-          <View key={i} style={{ width: 17, height: 1.6, backgroundColor: '#fff' }} />
+          <View key={i} style={{ width: 16, height: 1.5, backgroundColor: '#fff' }} />
         ))}
       </Pressable>
 
-      <View style={{ height: 1, backgroundColor: c.fitRule, marginHorizontal: 12, marginTop: 8 }} />
+      <View style={{ height: HAIRLINE, backgroundColor: c.fitRule, marginHorizontal: 13, marginTop: 9 }} />
 
-      <View style={{ flex: 1, paddingTop: 6 }}>
+      <View style={{ flex: 1, paddingTop: 8 }}>
         {state.routes.map((route: any, index: number) => {
           const focused = state.index === index;
           const { options } = descriptors[route.key];
@@ -90,28 +92,27 @@ export function FitRail({ state, descriptors, navigation }: any) {
                 }
               }}
               style={{
-                paddingVertical: 11,
+                paddingVertical: 12,
                 alignItems: 'center',
-                borderLeftWidth: 3,
+                borderLeftWidth: 2,
                 borderLeftColor: focused ? c.fit : 'transparent',
-                backgroundColor: focused ? c.fitInkSoft : 'transparent',
               }}
             >
               <Text
                 style={{
-                  fontFamily: fonts.fitMono,
+                  fontFamily: fonts.fitMonoLight,
                   fontSize: 8,
                   color: focused ? c.fit : c.fitDim,
-                  marginBottom: 1,
+                  marginBottom: 2,
                 }}
               >
                 {String(index + 1).padStart(2, '0')}
               </Text>
               <Text
                 style={{
-                  fontFamily: fonts.fitDisplay,
-                  fontSize: 12,
-                  letterSpacing: 0.4,
+                  fontFamily: fonts.fitLabel,
+                  fontSize: 9.5,
+                  letterSpacing: 0.9,
                   color: focused ? '#fff' : c.fitDim,
                 }}
               >
@@ -131,16 +132,16 @@ export function FitRail({ state, descriptors, navigation }: any) {
       >
         <View
           style={{
-            width: 26,
-            height: 26,
+            width: 25,
+            height: 25,
             borderRadius: 13,
-            borderWidth: 1.2,
+            borderWidth: 1,
             borderColor: c.fitDim,
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          <Text style={{ fontFamily: fonts.fitDisplay, fontSize: 12, color: '#fff' }}>C</Text>
+          <Text style={{ fontFamily: fonts.fitLabel, fontSize: 10.5, color: '#fff' }}>C</Text>
         </View>
       </Pressable>
     </View>
@@ -148,9 +149,8 @@ export function FitRail({ state, descriptors, navigation }: any) {
 }
 
 /**
- * A Fitness page. The masthead is flush left and reads as a header on a sheet
- * of paper: a small line of context, the name in condensed caps, a heavy rule
- * under it. No coloured bar, no centred title, no figure floating above it.
+ * A Fitness page. Masthead flush left, a rule under it, then the page. No
+ * coloured bar, no centred title, no figure floating above anything.
  */
 export function FitScreen({
   eyebrow,
@@ -160,45 +160,43 @@ export function FitScreen({
 }: {
   eyebrow?: string;
   title: string;
-  /** Sits on the masthead's baseline — a date, a total, a switcher. */
-  right?: React.ReactNode;
+  /** Sits on the masthead's baseline — a date range, a count. */
+  right?: string;
   children: React.ReactNode;
 }) {
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.surface }}>
+    <View style={{ flex: 1, backgroundColor: c.fitPaper }}>
       <RNStatusBar barStyle="light-content" backgroundColor={c.fitInk} />
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{
-          paddingHorizontal: 14,
-          paddingTop: insets.top + 14,
-          paddingBottom: insets.bottom + 36,
+          paddingHorizontal: 16,
+          paddingTop: insets.top + 16,
+          paddingBottom: insets.bottom + 40,
         }}
         showsVerticalScrollIndicator={false}
       >
         {eyebrow ? (
-          <Fig size={9} tone={c.fit} weight="semi" style={{ letterSpacing: 1.4, marginBottom: 2 }}>
+          <Fig size={9} tone={c.fit} style={{ letterSpacing: 1.5, marginBottom: 5 }}>
             {eyebrow.toUpperCase()}
           </Fig>
         ) : null}
 
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-          <Caps size={34} track={0.2} style={{ flex: 1, marginBottom: -3 }} numberOfLines={1}>
-            {title.toUpperCase()}
-          </Caps>
-          {typeof right === 'string' ? (
-            <Fig size={11} tone={c.inkFaint}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+          <T size={26} weight="heavy" style={{ letterSpacing: -0.6 }} numberOfLines={1}>
+            {title}
+          </T>
+          {right ? (
+            <Fig size={10.5} weight="light" tone={c.fitTextFaint}>
               {right}
             </Fig>
-          ) : (
-            right
-          )}
+          ) : null}
         </View>
 
-        <Rule strong style={{ marginTop: 7 }} />
+        <View style={{ height: HAIRLINE, backgroundColor: c.fitLine, marginHorizontal: -16, marginTop: 13 }} />
 
         {children}
       </ScrollView>

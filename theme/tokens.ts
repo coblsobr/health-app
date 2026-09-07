@@ -24,9 +24,20 @@ export type Palette = {
   fit: string;
   fitSoft: string;
   /**
-   * Fitness chrome. The spine is dark in both themes — the page under it still
-   * follows the user's light/dark choice like every other screen.
+   * Fitness owns its whole palette, not just an accent.
+   *
+   * Borrowing Nutrition's warm cream paper and warm beige rules and then
+   * putting a cool accent on top was the reason the section never looked
+   * settled: the ground and the accent were at different temperatures. This
+   * world gets concrete-grey paper, cool neutral rules and one warm accent.
    */
+  fitPaper: string;
+  fitText: string;
+  fitTextSoft: string;
+  fitTextFaint: string;
+  fitLine: string;
+  fitTrack: string;
+  /** The spine down the left edge. Dark in both themes. */
   fitInk: string;
   fitInkSoft: string;
   fitRule: string;
@@ -75,12 +86,18 @@ export const light: Palette = {
 
   nut: '#C8102E',
   nutSoft: '#FBE9EB',
-  fit: '#2247FF',
-  fitSoft: '#E7EAFF',
-  fitInk: '#101218',
-  fitInkSoft: '#191C25',
-  fitRule: '#2A2E3A',
-  fitDim: '#7A8092',
+  fit: '#CC4E14',
+  fitSoft: '#F6E7DF',
+  fitPaper: '#F0F0ED',
+  fitText: '#16171A',
+  fitTextSoft: '#5C5F65',
+  fitTextFaint: '#9B9EA4',
+  fitLine: '#D9D9D4',
+  fitTrack: '#E1E1DC',
+  fitInk: '#17181B',
+  fitInkSoft: '#232529',
+  fitRule: '#2E3035',
+  fitDim: '#85888E',
   hlth: '#5B3E96',
   hlthSoft: '#EDE8F6',
 
@@ -125,14 +142,18 @@ export const dark: Palette = {
 
   nut: '#FF4D5E',
   nutSoft: '#3A1319',
-  fit: '#5F7BFF',
-  fitSoft: '#141A33',
-  // Warm-black in dark, so the spine sits under the warm page ground rather
-  // than beside it. A cool black next to #15120E reads as a rendering fault.
-  fitInk: '#080605',
-  fitInkSoft: '#151109',
-  fitRule: '#241E15',
-  fitDim: '#7C7261',
+  fit: '#FF7A33',
+  fitSoft: '#2A1710',
+  fitPaper: '#111214',
+  fitText: '#ECECEA',
+  fitTextSoft: '#9B9EA4',
+  fitTextFaint: '#6E7178',
+  fitLine: '#24262A',
+  fitTrack: '#202226',
+  fitInk: '#08090A',
+  fitInkSoft: '#17181B',
+  fitRule: '#26282C',
+  fitDim: '#7B7E84',
   hlth: '#9B7BE8',
   hlthSoft: '#221B33',
 
@@ -187,12 +208,17 @@ export const fonts = {
   // Fitness is deliberately a different typeface from Nutrition. Sharing one
   // family across both was the main reason the two worlds felt like tabs of the
   // same generated app rather than two tools that talk to each other.
-  /** Condensed caps for mastheads and headline figures. Scoreboard, not dashboard. */
-  fitDisplay: 'BebasNeue_400Regular',
-  /** Every figure in the ledger. Monospaced digits are what make columns line up. */
-  fitMono: 'IBMPlexMono_400Regular',
-  fitMonoMed: 'IBMPlexMono_500Medium',
-  fitMonoSemi: 'IBMPlexMono_600SemiBold',
+  // Archivo is a squared-off grotesque with lowercase, replacing Bebas Neue.
+  // Bebas has no lowercase at all, so every label, heading and session name on
+  // the screen was set in caps and the whole section read as shouting.
+  fitDisplay: 'Archivo_700Bold',
+  fitDisplayHeavy: 'Archivo_800ExtraBold',
+  fitLabel: 'Archivo_600SemiBold',
+  fitBody: 'Archivo_500Medium',
+  /** Every figure. Monospaced digits are what make the columns line up. */
+  fitMono: 'DMMono_400Regular',
+  fitMonoMed: 'DMMono_500Medium',
+  fitMonoLight: 'DMMono_300Light',
 };
 
 /**
