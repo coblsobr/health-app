@@ -30,7 +30,7 @@ Then open http://localhost:8081. For the phone, see "Shipping" below.
 - `babel.config.js` uses `react-native-worklets/plugin`, **not**
   `react-native-reanimated/plugin` — Reanimated 4 moved it. Must stay last.
 
-## Design direction — printed cookbook
+## Design direction — Paprika-adjacent, cookbook type
 
 The UI was rebuilt away from a generated look. Keep these when adding screens:
 
@@ -39,8 +39,15 @@ The UI was rebuilt away from a generated look. Keep these when adding screens:
 - **Sentence-case serif headings** (`<SectionTitle>`), never uppercase tracked
   labels.
 - **No emoji as icons.** Use `components/Icon.tsx`.
-- **One accent.** `c.nut` carries the app; `fit`/`hlth`/`info` are muted
-  supporting roles, not co-stars.
+- **Each section owns a colour and wears it.** `Screen` fills the app bar with
+  the section tone: Nutrition red, Fitness green, Health purple. This is what
+  makes them feel like related apps rather than one app with tinted tabs.
+  Detect the section with **`useSegments()`, never `usePathname()`** — the
+  latter strips group segments, so `/(fitness)/today` arrives as `/today`.
+- **Saturated, not muted.** Confident colour is what separates a real app from
+  the generic minimal look; a desaturated palette reads as generated.
+- **Dense over airy.** Generous whitespace everywhere is its own house style.
+  Photos and content should carry the screen.
 - **Use the type scale in `tokens.ts`.** One loud voice per screen (`hero`,
   46px) and a quiet one for everything else. Everything landing between
   10-20px is what made it read flat.
@@ -56,8 +63,9 @@ The UI was rebuilt away from a generated look. Keep these when adding screens:
   `TextAction`, `Eyebrow`, `DoubleRule`, `Caption`, `ScriptNote`, `Ornament`.
   Prefer them over `Card` + `Ch` + `Btn`.
 
-Diary is the reference implementation. Other screens still use the old
-card-heavy layout and get reworked one at a time.
+Reference implementations: **Library** (photo grid, section chrome) and
+**Diary** (typographic page). The rest still use the old card-heavy layout and
+get reworked one at a time.
 
 ## Theming
 
