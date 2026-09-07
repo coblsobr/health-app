@@ -49,6 +49,12 @@
           "photosPermission": "Used only when you pick a photo for a recipe.",
           "cameraPermission": "Used to photograph a cookbook page so the recipe can be read."
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to photograph recipe pages. Pages are read on your phone and never uploaded."
+        }
       ]
     ],
     "experiments": {

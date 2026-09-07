@@ -44,6 +44,13 @@ Camera (`/recipe/scan`), Web (`/recipe/import`). **Not a bottom sheet.** A
 titled panel with full-width labelled rows, hint text under each and a scrim
 behind it was four times the furniture this needs.
 
+Camera opens straight into a live viewfinder (`components/PageCamera.tsx`,
+expo-camera): shutter in the middle, gallery in the bottom-left corner, close
+top-left, thumbnails stacking up to four pages for a cookbook spread. It does
+**not** hand off to the system camera app, and there is no intermediate form
+asking again what you already chose. `takePictureAsync` must wait for
+`onCameraReady` — called earlier it returns a blank frame on Android.
+
 Nutrition, Fitness and Health still exist and still work; they are reachable
 from the drawer and are not being developed. Do not restyle them.
 
