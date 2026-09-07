@@ -8,7 +8,8 @@ import { StatusBar } from 'expo-status-bar';
 // is a hard bundling error, so those packages are deliberately not installed.
 import { Drawer, DrawerContentScrollView, type DrawerContentComponentProps } from 'expo-router/drawer';
 import { useFonts } from 'expo-font';
-import { Fraunces_600SemiBold, Fraunces_700Bold } from '@expo-google-fonts/fraunces';
+import { Fraunces_600SemiBold, Fraunces_700Bold, Fraunces_600SemiBold_Italic } from '@expo-google-fonts/fraunces';
+import { Caveat_600SemiBold } from '@expo-google-fonts/caveat';
 import {
   AlbertSans_400Regular, AlbertSans_500Medium, AlbertSans_600SemiBold, AlbertSans_700Bold,
 } from '@expo-google-fonts/albert-sans';
@@ -114,6 +115,8 @@ export default function RootLayout() {
   const [loaded] = useFonts({
     Fraunces_600SemiBold,
     Fraunces_700Bold,
+    Fraunces_600SemiBold_Italic,
+    Caveat_600SemiBold,
     AlbertSans_400Regular,
     AlbertSans_500Medium,
     AlbertSans_600SemiBold,

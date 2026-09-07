@@ -386,3 +386,68 @@ export function TextAction({ label, onPress, tone }: { label: string; onPress?: 
     </Pressable>
   );
 }
+
+/* ── cookbook devices ───────────────────────────────────────
+   Printed cookbooks lean on a few consistent typographic moves: a tracked
+   small-caps line above a title, a heavy/hairline rule pair beneath it, an
+   italic caption, and the occasional handwritten margin note. Used sparingly
+   these read as "set by someone"; used everywhere they read as noise.
+   ─────────────────────────────────────────────────────────── */
+
+/** Tracked small caps, sitting above a title. One per screen, not per section. */
+export function Eyebrow({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'center' }) {
+  const { c, fonts } = useTheme();
+  return (
+    <Text
+      style={{
+        fontFamily: fonts.semi,
+        fontSize: 10,
+        letterSpacing: 2.2,
+        textTransform: 'uppercase',
+        color: c.inkFaint,
+        textAlign: align,
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+/** The heavy-over-hairline rule pair used under chapter headings in print. */
+export function DoubleRule({ style }: { style?: ViewStyle }) {
+  const { c } = useTheme();
+  return (
+    <View style={style}>
+      <View style={{ height: 1.5, backgroundColor: c.ink, opacity: 0.75 }} />
+      <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: c.ink, opacity: 0.35, marginTop: 2 }} />
+    </View>
+  );
+}
+
+/** An italic caption — the line that sits under a recipe title in a book. */
+export function Caption({ children, style }: { children: React.ReactNode; style?: TextStyle }) {
+  const { c, fonts } = useTheme();
+  return (
+    <Text style={[{ fontFamily: fonts.displayItalic, fontSize: 15, color: c.inkSoft }, style]}>{children}</Text>
+  );
+}
+
+/** A handwritten margin note. Deliberately rare. */
+export function ScriptNote({ children, style }: { children: React.ReactNode; style?: TextStyle }) {
+  const { c, fonts } = useTheme();
+  return (
+    <Text style={[{ fontFamily: fonts.script, fontSize: 19, color: c.inkSoft, lineHeight: 22 }, style]}>
+      {children}
+    </Text>
+  );
+}
+
+/** A centred ornament between sections, as a book uses to break a chapter. */
+export function Ornament() {
+  const { c, fonts } = useTheme();
+  return (
+    <Text style={{ fontFamily: fonts.display, fontSize: 13, color: c.inkFaint, textAlign: 'center', marginVertical: 18 }}>
+      ❧
+    </Text>
+  );
+}

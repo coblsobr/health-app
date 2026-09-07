@@ -2,7 +2,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { View, Text, Pressable, TextInput, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Screen } from '../../components/Screen';
-import { Row, Rule, SectionTitle, Hero, Meter, LineItem, TextAction } from '../../components/ui';
+import {
+  Row, Rule, SectionTitle, Hero, Meter, LineItem, TextAction,
+  Eyebrow, DoubleRule, Caption,
+} from '../../components/ui';
 import { Icon } from '../../components/Icon';
 import {
   listDiary, addDiaryEntry, removeDiaryEntry, listPlan, listRecipes,
@@ -130,18 +133,16 @@ export default function Diary() {
 
   return (
     <Screen title="Diary">
-      {/* date line — quiet, sentence case, with navigation on the ends */}
-      <Row style={{ marginBottom: 26 }}>
+      {/* Running head: tracked small caps between two arrows, as a book page. */}
+      <Row style={{ marginBottom: 30 }}>
         <Pressable onPress={() => setDate(addDays(date, -1))} hitSlop={14}>
-          <Text style={{ fontSize: 17, color: c.inkFaint }}>‹</Text>
+          <Text style={{ fontSize: 15, color: c.inkFaint }}>‹</Text>
         </Pressable>
         <Pressable onPress={() => setDate(toISODate(new Date()))}>
-          <Text style={{ fontFamily: fonts.body, fontSize: 12.5, color: isToday ? c.inkSoft : c.nut }}>
-            {isToday ? longDate : `${longDate} · back to today`}
-          </Text>
+          <Eyebrow align="center">{isToday ? longDate : `${longDate} · today`}</Eyebrow>
         </Pressable>
         <Pressable onPress={() => setDate(addDays(date, 1))} hitSlop={14}>
-          <Text style={{ fontSize: 17, color: c.inkFaint }}>›</Text>
+          <Text style={{ fontSize: 15, color: c.inkFaint }}>›</Text>
         </Pressable>
       </Row>
 
@@ -154,15 +155,20 @@ export default function Diary() {
       {!loading && !dbError ? (
         <>
           {/* the one number this screen is about */}
-          <Hero
-            value={Math.abs(left).toLocaleString()}
-            caption={over ? 'calories over' : 'calories left'}
-            tone={over ? c.danger : c.ink}
-          />
-          <View style={{ marginTop: 16, marginBottom: 8 }}>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{
+              fontFamily: fonts.display, fontSize: 58, lineHeight: 64,
+              color: over ? c.danger : c.ink, letterSpacing: -2,
+            }}>
+              {Math.abs(left).toLocaleString()}
+            </Text>
+            <Caption style={{ marginTop: -4 }}>{over ? 'calories over' : 'calories left'}</Caption>
+          </View>
+
+          <View style={{ marginTop: 22, marginBottom: 10 }}>
             <Meter pct={target > 0 ? (totals.kcal / target) * 100 : 0} tone={over ? c.danger : c.nut} />
           </View>
-          <Text style={{ fontFamily: fonts.body, fontSize: 12, color: c.inkSoft }}>
+          <Text style={{ fontFamily: fonts.body, fontSize: 12.5, color: c.inkSoft, textAlign: 'center' }}>
             {totals.kcal.toLocaleString()} eaten · {target.toLocaleString()} budget
             {totals.protein ? `  ·  ${totals.protein}g protein` : ''}
           </Text>
@@ -171,7 +177,7 @@ export default function Diary() {
           {unlogged.length > 0 ? (
             <View style={{ marginTop: 34 }}>
               <SectionTitle>Planned today</SectionTitle>
-              <Rule />
+              <DoubleRule style={{ marginBottom: 2 }} />
               {unlogged.map((p) => (
                 <View key={p.id}>
                   <LineItem
@@ -210,9 +216,9 @@ export default function Diary() {
                   >
                     {SLOT_LABEL[slot]}
                   </SectionTitle>
-                  <Rule />
+                  <DoubleRule style={{ marginBottom: 2 }} />
                   {list.length === 0 ? (
-                    <Text style={{ fontFamily: fonts.body, fontSize: 13, color: c.inkFaint, paddingVertical: 11 }}>
+                    <Text style={{ fontFamily: fonts.displayItalic, fontSize: 14, color: c.inkFaint, paddingVertical: 11 }}>
                       Nothing yet
                     </Text>
                   ) : (
@@ -239,7 +245,7 @@ export default function Diary() {
           </View>
 
           <TextAction label="Log something →" onPress={() => { setAddSlot('dinner'); setAddOpen(true); }} />
-          <Text style={{ fontFamily: fonts.body, fontSize: 11.5, color: c.inkFaint, marginTop: 4, marginBottom: 8 }}>
+          <Text style={{ fontFamily: fonts.body, fontSize: 11.5, color: c.inkFaint, marginTop: 2, marginBottom: 10 }}>
             Barcode scanning and restaurant menus aren't in yet.
           </Text>
         </>
