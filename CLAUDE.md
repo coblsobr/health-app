@@ -30,7 +30,7 @@ Then open http://localhost:8081. For the phone, see "Shipping" below.
 - `babel.config.js` uses `react-native-worklets/plugin`, **not**
   `react-native-reanimated/plugin` — Reanimated 4 moved it. Must stay last.
 
-## Design direction — editorial
+## Design direction — printed cookbook
 
 The UI was rebuilt away from a generated look. Keep these when adding screens:
 
@@ -44,8 +44,17 @@ The UI was rebuilt away from a generated look. Keep these when adding screens:
 - **Use the type scale in `tokens.ts`.** One loud voice per screen (`hero`,
   46px) and a quiet one for everything else. Everything landing between
   10-20px is what made it read flat.
+- **Warm paper, not screen white.** The ground is cream and the ink is warm
+  near-black; dark mode is a warm near-black page, not a dimmed white one.
+- **Cookbook devices, used sparingly.** `<Eyebrow>` tracked small caps as a
+  running head (once per screen, not per section), `<DoubleRule>` under a
+  heading, `<Caption>` italic under a figure, `<ScriptNote>` for a genuine
+  margin note. Reach for these rarely — everywhere at once is noise.
+- **Script is for warmth, never for information.** A limitation or a caveat set
+  in handwriting reads as decoration; keep those in quiet plain text.
 - Primitives: `Rule`, `SectionTitle`, `Hero`, `Meter`, `LineItem`,
-  `TextAction`. Prefer them over `Card` + `Ch` + `Btn`.
+  `TextAction`, `Eyebrow`, `DoubleRule`, `Caption`, `ScriptNote`, `Ornament`.
+  Prefer them over `Card` + `Ch` + `Btn`.
 
 Diary is the reference implementation. Other screens still use the old
 card-heavy layout and get reworked one at a time.
