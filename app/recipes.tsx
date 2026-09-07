@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, Pressable, Image, ScrollView, useWindowDimensions } from 'react-native';
+import {
+  View, Text, Pressable, Image, ScrollView, Modal, StyleSheet, useWindowDimensions,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { listRecipes, getSetting, setSetting, type Recipe } from '../lib/db';
+import { Icon, type IconName } from '../components/Icon';
 import { useTheme } from '../theme/ThemeProvider';
 
 type View_ = 'photos' | 'names';
+
+/** The three ways a recipe gets in. Order as asked for. */
+const WAYS: { icon: IconName; label: string; hint: string; href: string }[] = [
+  { icon: 'pencil', label: 'By hand', hint: 'Type it in yourself', href: '/recipe/new' },
+  { icon: 'camera', label: 'By camera', hint: 'Photograph a cookbook page', href: '/recipe/scan' },
+  { icon: 'globe', label: 'From a web page', hint: 'Paste a link and pull the recipe', href: '/recipe/import' },
+];
 
 /**
  * Recipes. The whole screen.
@@ -25,6 +35,7 @@ export default function Recipes() {
   const [view, setView] = useState<View_>('photos');
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   // Restore the last-used view. Failing to read it is not worth surfacing.
   useEffect(() => {
@@ -162,7 +173,7 @@ export default function Recipes() {
         }}
       >
         <Pressable
-          onPress={() => router.push('/recipe/import')}
+          onPress={() => setAdding(true)}
           accessibilityRole="button"
           accessibilityLabel="Add a recipe"
           style={{
@@ -187,6 +198,78 @@ export default function Recipes() {
           {view === 'photos' ? <NamesGlyph tone={c.inkSoft} /> : <PhotosGlyph tone={c.inkSoft} />}
         </Pressable>
       </View>
+
+      <Modal
+        visible={adding}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAdding(false)}
+      >
+        {/* The scrim is a sibling of the sheet, not its parent: nesting them
+            makes every tap on the sheet bubble up and close it. */}
+        <View style={{ flex: 1 }}>
+          <Pressable
+            style={[StyleSheet.absoluteFill, { backgroundColor: c.scrim }]}
+            onPress={() => setAdding(false)}
+            accessibilityLabel="Close"
+          />
+
+          <View
+            style={{
+              marginTop: 'auto',
+              backgroundColor: c.surface,
+              paddingTop: 18,
+              paddingBottom: insets.bottom + 12,
+              borderTopLeftRadius: 14,
+              borderTopRightRadius: 14,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: fonts.display,
+                fontSize: 21,
+                color: c.ink,
+                paddingHorizontal: PAD,
+                paddingBottom: 12,
+              }}
+            >
+              Add a recipe
+            </Text>
+
+            {WAYS.map((w, i) => (
+              <Pressable
+                key={w.label}
+                onPress={() => {
+                  // Close first: pushing under an open modal leaves the sheet
+                  // sitting on top of the screen it just opened.
+                  setAdding(false);
+                  router.push(w.href as never);
+                }}
+                accessibilityRole="button"
+              >
+                {i ? <View style={{ height: 1, backgroundColor: c.line, marginLeft: PAD }} /> : null}
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 14,
+                    paddingHorizontal: PAD,
+                    paddingVertical: 15,
+                  }}
+                >
+                  <Icon name={w.icon} size={21} color={c.nut} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: fonts.semi, fontSize: 16, color: c.ink }}>{w.label}</Text>
+                    <Text style={{ fontFamily: fonts.body, fontSize: 12.5, color: c.inkFaint, marginTop: 2 }}>
+                      {w.hint}
+                    </Text>
+                  </View>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
