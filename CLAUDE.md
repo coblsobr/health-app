@@ -72,11 +72,10 @@ get reworked one at a time.
 One set of semantic tokens, two value sets, in `theme/tokens.ts`. Components
 **never** use a raw hex — always `const { c } = useTheme()`.
 
-- `c.nut` coral = Nutrition, `c.fit` green = Fitness, `c.hlth` violet = Health
+- `c.nut` red = Nutrition, `c.fit` green = Fitness, `c.hlth` purple = Health
 - Adding a third theme = a third object in `tokens.ts`, nothing else
-- Light/Dark/System selector lives in `app/settings.tsx` and is live
-- Theme choice is **not yet persisted** — it resets on reload. Wire it to
-  storage when the DB layer lands.
+- Light/Dark/System lives in `app/settings.tsx`, and **is persisted** via
+  `app_settings.theme_mode`
 
 ## Layout
 
@@ -88,12 +87,19 @@ app/
   (fitness)/         today · history · log · plan · progress
   (health)/          today · goals · trends
   profile · settings · account
-components/          Screen (app bar), ui (kit), Icon, Ring, tabBar
+components/          Screen (section chrome), ui (kit), Icon, Ring, tabBar,
+                     RecipeForm, UpdatePanel
+lib/                 db.ts (SQLite + all queries), import.ts (link),
+                     ocr.ts (photo), nutrition.ts + foods.json (USDA),
+                     plan.ts (meal plan), grocery.ts, health/ (parked)
 theme/               tokens.ts, ThemeProvider.tsx
 ```
 
-`components/ui.tsx` is the kit — Card, Row, Ch, H3, Num, Sm, Xs, KV, Chip, Tag,
-Btn, Toggle, Prog, Tile, Seg, Stepper, Toast, Photo. Reuse before adding.
+`components/ui.tsx` is the kit. Prefer the newer primitives — `Rule`,
+`SectionTitle`, `Hero`, `Meter`, `LineItem`, `TextAction`, `Eyebrow`,
+`DoubleRule`, `Caption`, `ScriptNote`, `Ornament` — over the older card-era set
+(`Card`, `Ch`, `Btn`, `Tile`, `Prog`, `Toast`), which survives only on screens
+not yet reworked.
 
 ## Shipping
 
@@ -261,16 +267,23 @@ real file and unaffected. Re-seed rather than assuming a persistence bug.
 
 ## Status
 
-- [x] Phase 0 — shell: three worlds, drawer, tabs, theming.
-      Built, installed, on GitHub, EAS Update wired.
-- [x] Phase 1 — recipe library: SQLite, add/view/edit/delete, rating,
-      favourites, photos, search, sort, tags.
-- [x] Phase 2a — import from a pasted link (`lib/import.ts`)
-- [x] Phase 2b — photo / screenshot import (`lib/ocr.ts`), multi-page
-- [ ] Phase 2c — in-app browser "browse & grab"
-- [x] Phase 3 — nutrition estimation (cost waits on Meijer data, Phase 7)
-- [x] Meal planning — prep vs daily modes, add-to-plan, day totals
-- [x] Grocery list from a plan — batch-aware, merged, aisle-grouped
-- [x] Diary logging + Health tab reading real data; theme now persists
-- [ ] Next: Health Connect (Phase 8) to make 'Burned' real, then the adaptive budget
-- [ ] Phases 4-11 — see `../HEALTH-APP-PLAN.md`
+Full history and the ordered next steps live in `../HEALTH-APP-PLAN.md` §11.
+Short version:
+
+**Working end to end:** import a recipe (link or photo) → nutrition estimated →
+plan a week (batch prep or daily) → grocery list scaled and merged → log what
+you ate → Health tab counts it.
+
+**Parked:** Health Connect. `lib/health/` has a finished provider behind a
+platform interface, but `react-native-health-connect` is uninstalled (it
+changes the runtime fingerprint) and nothing imports it. Resuming needs the
+package, its config plugin, wiring, and a new APK.
+
+**Next:** finish the design rework (Recipe detail → Plan/Shop → Fitness world),
+then Health Connect, then browse-&-grab import.
+
+**Shipping:** current APK runtime is `110c84bb1dc41a566371c96d8ae4077508b4d4a0`.
+JS-only changes match it and ship over the air. Check with
+`npx expo-updates fingerprint:generate --platform android` *before* publishing,
+and confirm with `eas update:list` afterwards — a mismatched publish succeeds
+silently and never reaches the phone.
