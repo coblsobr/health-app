@@ -30,6 +30,18 @@ Then open http://localhost:8081. For the phone, see "Shipping" below.
 - `babel.config.js` uses `react-native-worklets/plugin`, **not**
   `react-native-reanimated/plugin` — Reanimated 4 moved it. Must stay last.
 
+## Right now: Recipes is the app
+
+`app/recipes.tsx` is the landing screen and the only one being worked on. It is
+deliberately three things — the recipes, a photos/names toggle in the
+bottom-left corner, and one Add button — and nothing else. **Do not add a
+search field, a sort control, a filter strip, a tab bar or a summary line to
+it.** Every one of those was there before and every one of them was scaffolding
+around a library holding three recipes.
+
+Nutrition, Fitness and Health still exist and still work; they are reachable
+from the drawer and are not being developed. Do not restyle them.
+
 ## Two worlds, two design languages
 
 Nutrition and Fitness are deliberately **not** the same app with a different

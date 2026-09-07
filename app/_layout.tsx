@@ -25,6 +25,7 @@ import { initDb } from '../lib/db';
 
 /** The three worlds, plus the two pages that hang off the bottom of the drawer. */
 const SECTIONS: { route: string; label: string; icon: IconName }[] = [
+  { route: 'recipes', label: 'Recipes', icon: 'library' },
   { route: '(nutrition)', label: 'Nutrition', icon: 'basket' },
   { route: '(fitness)', label: 'Fitness', icon: 'dumbbell' },
   { route: '(health)', label: 'Health', icon: 'chart' },
@@ -102,6 +103,7 @@ function Root() {
           swipeEdgeWidth: 40,
         }}
       >
+        <Drawer.Screen name="recipes" options={{ title: 'Recipes' }} />
         <Drawer.Screen name="(nutrition)" options={{ title: 'Nutrition' }} />
         <Drawer.Screen name="(fitness)" options={{ title: 'Fitness' }} />
         <Drawer.Screen name="(health)" options={{ title: 'Health' }} />
