@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  View, Text, Pressable, Image, ScrollView, Modal, StyleSheet, useWindowDimensions,
-} from 'react-native';
+import { View, Text, Pressable, Image, ScrollView, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { listRecipes, getSetting, setSetting, type Recipe } from '../lib/db';
@@ -10,11 +8,11 @@ import { useTheme } from '../theme/ThemeProvider';
 
 type View_ = 'photos' | 'names';
 
-/** The three ways a recipe gets in. Order as asked for. */
-const WAYS: { icon: IconName; label: string; hint: string; href: string }[] = [
-  { icon: 'pencil', label: 'By hand', hint: 'Type it in yourself', href: '/recipe/new' },
-  { icon: 'camera', label: 'By camera', hint: 'Photograph a cookbook page', href: '/recipe/scan' },
-  { icon: 'globe', label: 'From a web page', hint: 'Paste a link and pull the recipe', href: '/recipe/import' },
+/** The three ways a recipe gets in. */
+const WAYS: { icon: IconName; label: string; href: string }[] = [
+  { icon: 'pencil', label: 'Hand', href: '/recipe/new' },
+  { icon: 'camera', label: 'Camera', href: '/recipe/scan' },
+  { icon: 'globe', label: 'Web', href: '/recipe/import' },
 ];
 
 /**
@@ -157,7 +155,9 @@ export default function Recipes() {
         )}
       </ScrollView>
 
-      {/* The only two controls on the screen. */}
+      {/* Tapping ADD opens three cells directly above it. Not a sheet: a
+          titled panel with a row of labelled options and a scrim behind it is
+          four times the furniture this needs. */}
       <View
         style={{
           position: 'absolute',
@@ -168,12 +168,41 @@ export default function Recipes() {
           paddingTop: 14,
           paddingHorizontal: PAD,
           alignItems: 'center',
-          justifyContent: 'center',
           backgroundColor: c.surface,
         }}
       >
+        {adding ? (
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+            {WAYS.map((w) => (
+              <Pressable
+                key={w.label}
+                onPress={() => {
+                  setAdding(false);
+                  router.push(w.href as never);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={w.label}
+                style={{
+                  width: 76,
+                  height: 62,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: c.line,
+                  backgroundColor: c.card,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
+                }}
+              >
+                <Icon name={w.icon} size={20} color={c.nut} />
+                <Text style={{ fontFamily: fonts.semi, fontSize: 11.5, color: c.ink }}>{w.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
         <Pressable
-          onPress={() => setAdding(true)}
+          onPress={() => setAdding((a) => !a)}
           accessibilityRole="button"
           accessibilityLabel="Add a recipe"
           style={{
@@ -184,7 +213,7 @@ export default function Recipes() {
           }}
         >
           <Text style={{ fontFamily: fonts.bold, fontSize: 17, color: '#fff', letterSpacing: 1.4 }}>
-            ADD
+            {adding ? 'CLOSE' : 'ADD'}
           </Text>
         </Pressable>
 
@@ -198,78 +227,6 @@ export default function Recipes() {
           {view === 'photos' ? <NamesGlyph tone={c.inkSoft} /> : <PhotosGlyph tone={c.inkSoft} />}
         </Pressable>
       </View>
-
-      <Modal
-        visible={adding}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setAdding(false)}
-      >
-        {/* The scrim is a sibling of the sheet, not its parent: nesting them
-            makes every tap on the sheet bubble up and close it. */}
-        <View style={{ flex: 1 }}>
-          <Pressable
-            style={[StyleSheet.absoluteFill, { backgroundColor: c.scrim }]}
-            onPress={() => setAdding(false)}
-            accessibilityLabel="Close"
-          />
-
-          <View
-            style={{
-              marginTop: 'auto',
-              backgroundColor: c.surface,
-              paddingTop: 18,
-              paddingBottom: insets.bottom + 12,
-              borderTopLeftRadius: 14,
-              borderTopRightRadius: 14,
-            }}
-          >
-            <Text
-              style={{
-                fontFamily: fonts.display,
-                fontSize: 21,
-                color: c.ink,
-                paddingHorizontal: PAD,
-                paddingBottom: 12,
-              }}
-            >
-              Add a recipe
-            </Text>
-
-            {WAYS.map((w, i) => (
-              <Pressable
-                key={w.label}
-                onPress={() => {
-                  // Close first: pushing under an open modal leaves the sheet
-                  // sitting on top of the screen it just opened.
-                  setAdding(false);
-                  router.push(w.href as never);
-                }}
-                accessibilityRole="button"
-              >
-                {i ? <View style={{ height: 1, backgroundColor: c.line, marginLeft: PAD }} /> : null}
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 14,
-                    paddingHorizontal: PAD,
-                    paddingVertical: 15,
-                  }}
-                >
-                  <Icon name={w.icon} size={21} color={c.nut} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: fonts.semi, fontSize: 16, color: c.ink }}>{w.label}</Text>
-                    <Text style={{ fontFamily: fonts.body, fontSize: 12.5, color: c.inkFaint, marginTop: 2 }}>
-                      {w.hint}
-                    </Text>
-                  </View>
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }

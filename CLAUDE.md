@@ -39,12 +39,10 @@ search field, a sort control, a filter strip, a tab bar or a summary line to
 it.** Every one of those was there before and every one of them was scaffolding
 around a library holding three recipes.
 
-ADD opens a sheet with the three ways a recipe gets in — by hand
-(`/recipe/new`), by camera (`/recipe/scan`), from a web page
-(`/recipe/import`). The scrim is a **sibling** of the sheet, never its parent:
-nesting them makes every tap on the sheet bubble up and dismiss it. Each row
-closes the sheet before it navigates, or the sheet is left sitting on top of
-the screen it just opened.
+ADD toggles three small cells directly above it — Hand (`/recipe/new`),
+Camera (`/recipe/scan`), Web (`/recipe/import`). **Not a bottom sheet.** A
+titled panel with full-width labelled rows, hint text under each and a scrim
+behind it was four times the furniture this needs.
 
 Nutrition, Fitness and Health still exist and still work; they are reachable
 from the drawer and are not being developed. Do not restyle them.
