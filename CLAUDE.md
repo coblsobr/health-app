@@ -366,7 +366,7 @@ package, its config plugin, wiring, and a new APK.
 **Next:** finish the design rework (Recipe detail → Plan/Shop → Fitness world),
 then Health Connect, then browse-&-grab import.
 
-**Shipping:** current APK runtime is `110c84bb1dc41a566371c96d8ae4077508b4d4a0`.
+**Shipping:** current APK runtime is `71e5137ee23f4d4e7ae79059bed33193a12dcbb9`.
 JS-only changes match it and ship over the air. Check with
 `npx expo-updates fingerprint:generate --platform android` *before* publishing,
 and confirm with `eas update:list` afterwards — a mismatched publish succeeds
