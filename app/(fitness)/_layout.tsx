@@ -1,16 +1,22 @@
 import { Tabs } from 'expo-router';
-import { useTheme } from '../../theme/ThemeProvider';
-import { tabScreenOptions, tabIcon, centreIcon } from '../../components/tabBar';
+import { FitRail } from '../../components/fitChrome';
 
+/**
+ * Fitness navigates from a spine down the left edge, not a bar along the
+ * bottom. `tabBarPosition: 'left'` makes the navigator lay its children out in
+ * a row; `tabBar` replaces the bar itself with the rail.
+ */
 export default function FitnessTabs() {
-  const { c } = useTheme();
   return (
-    <Tabs screenOptions={tabScreenOptions(c, c.fit)}>
-      <Tabs.Screen name="today" options={{ title: 'Today', tabBarIcon: tabIcon('clock') }} />
-      <Tabs.Screen name="history" options={{ title: 'History', tabBarIcon: tabIcon('diary') }} />
-      <Tabs.Screen name="log" options={{ title: 'Log', tabBarIcon: centreIcon('plus', c.fit) }} />
-      <Tabs.Screen name="plan" options={{ title: 'Plan', tabBarIcon: tabIcon('calendar') }} />
-      <Tabs.Screen name="progress" options={{ title: 'Progress', tabBarIcon: tabIcon('chart') }} />
+    <Tabs
+      tabBar={(props) => <FitRail {...props} />}
+      screenOptions={{ headerShown: false, tabBarPosition: 'left' }}
+    >
+      <Tabs.Screen name="today" options={{ title: 'Today' }} />
+      <Tabs.Screen name="log" options={{ title: 'Log' }} />
+      <Tabs.Screen name="plan" options={{ title: 'Week' }} />
+      <Tabs.Screen name="history" options={{ title: 'Past' }} />
+      <Tabs.Screen name="progress" options={{ title: 'Trend' }} />
     </Tabs>
   );
 }

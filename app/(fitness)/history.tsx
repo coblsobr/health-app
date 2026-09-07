@@ -1,42 +1,52 @@
-import { View, Text } from 'react-native';
-import { Screen } from '../../components/Screen';
-import { Card, Ch, Row, Xs, Sm, Divider } from '../../components/ui';
-import { useTheme } from '../../theme/ThemeProvider';
+import { View } from 'react-native';
+import { FitScreen } from '../../components/fitChrome';
+import { Head, Entry, Line, Note } from '../../components/fit';
 
-const HISTORY = [
-  { day: 'Sun Aug 2', icon: '🏃', name: 'Morning Run', meta: '4.28 mi · 38:12 · 8:56 pace', cal: '482' },
-  { day: 'Sat Aug 1', icon: '🏋️', name: 'Legs — Squat focus', meta: '55 min · 5 exercises', cal: '478' },
-  { day: 'Fri Jul 31', icon: '🚴', name: 'Evening ride', meta: '11.2 mi · 42:08', cal: '396' },
-  { day: 'Thu Jul 30', icon: '🏋️', name: 'Pull — Back & Biceps', meta: '50 min · 6 exercises', cal: '401' },
+/** Grouped by day: the date is a column head, not a label inside a card. */
+const DAYS: { date: string; total: string; rows: { time: string; name: string; meta: string; cal: string }[] }[] = [
+  {
+    date: 'Sun 02 Aug',
+    total: '482',
+    rows: [{ time: '07:04', name: 'Morning run', meta: '4.28 mi · 38:12 · 8:56 pace', cal: '482' }],
+  },
+  {
+    date: 'Sat 01 Aug',
+    total: '478',
+    rows: [{ time: '10:22', name: 'Legs — squat focus', meta: '55 min · 5 exercises · gym', cal: '478' }],
+  },
+  {
+    date: 'Fri 31 Jul',
+    total: '571',
+    rows: [
+      { time: '18:10', name: 'Evening ride', meta: '11.2 mi · 42:08 · outdoors', cal: '396' },
+      { time: '21:15', name: 'Mobility', meta: '18 min · home', cal: '175' },
+    ],
+  },
+  {
+    date: 'Thu 30 Jul',
+    total: '401',
+    rows: [{ time: '06:20', name: 'Pull — back & biceps', meta: '50 min · 6 exercises · gym', cal: '401' }],
+  },
 ];
 
 export default function History() {
-  const { c, fonts } = useTheme();
   return (
-    <Screen title="History" subtitle="Last 30 days">
-      <Card>
-        <Ch>Recent sessions</Ch>
-        {HISTORY.map((h, i) => (
-          <View key={h.name + h.day}>
-            {i ? <Divider style={{ marginVertical: 3 }} /> : null}
-            <Xs style={{ marginTop: 4 }}>{h.day}</Xs>
-            <Row style={{ paddingVertical: 6, gap: 9 }}>
-              <View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: c.cardAlt, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 15 }}>{h.icon}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: fonts.semi, fontSize: 12, color: c.ink }}>{h.name}</Text>
-                <Xs>{h.meta}</Xs>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={{ fontFamily: fonts.displayBold, fontSize: 12, color: c.fit }}>{h.cal}</Text>
-                <Xs>cal</Xs>
-              </View>
-            </Row>
-          </View>
-        ))}
-      </Card>
-      <Sm style={{ textAlign: 'center' }}>Tapping a session will open the map + HR detail view.</Sm>
-    </Screen>
+    <FitScreen eyebrow="Training log" title="Past 30 days" right="22 sessions">
+      <Head right="4,880 cal">Totals</Head>
+      <Line label="Sessions" value="22" sub="last 30 days" />
+      <Line label="Time" value="16:42" unit="hr" sub="last 30 days" />
+      <Line label="Streak" value="6" unit="days" sub="current" />
+
+      {DAYS.map((d) => (
+        <View key={d.date}>
+          <Head right={d.total + ' cal'}>{d.date}</Head>
+          {d.rows.map((r) => (
+            <Entry key={r.time} time={r.time} name={r.name} meta={r.meta} value={r.cal} />
+          ))}
+        </View>
+      ))}
+
+      <Note>Tapping a session will open its map and heart-rate detail once phase 8 lands.</Note>
+    </FitScreen>
   );
 }

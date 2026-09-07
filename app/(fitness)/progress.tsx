@@ -1,39 +1,87 @@
+import { useState } from 'react';
 import { View } from 'react-native';
-import Svg, { Rect } from 'react-native-svg';
-import { Screen } from '../../components/Screen';
-import { Card, Ch, Row, KV, Seg, Tile } from '../../components/ui';
+import { FitScreen } from '../../components/fitChrome';
+import { Head, Line, Switcher, Fig, Caps, Note, Rule } from '../../components/fit';
 import { useTheme } from '../../theme/ThemeProvider';
 
-const BARS = [28, 42, 19, 51, 34, 12, 46, 30, 55, 24, 38, 44];
+/** Sessions per week. The chart is the table — one bar per row, in place. */
+const WEEKS: [string, number, string][] = [
+  ['W 32', 5, '4h 10m'],
+  ['W 31', 4, '3h 25m'],
+  ['W 30', 6, '5h 02m'],
+  ['W 29', 3, '2h 18m'],
+  ['W 28', 5, '4h 44m'],
+  ['W 27', 2, '1h 36m'],
+  ['W 26', 4, '3h 51m'],
+  ['W 25', 5, '4h 07m'],
+];
+
+const PBS: [string, string, string][] = [
+  ['Bench press', '185', 'lb × 5'],
+  ['Back squat', '245', 'lb × 5'],
+  ['Deadlift', '315', 'lb × 3'],
+  ['Overhead press', '115', 'lb × 5'],
+  ['Fastest mile', '8:39', 'min'],
+  ['Longest ride', '18.4', 'mi'],
+];
 
 export default function Progress() {
   const { c } = useTheme();
+  const [span, setSpan] = useState(1);
+  const peak = Math.max(...WEEKS.map((w) => w[1]));
+
   return (
-    <Screen title="Progress">
-      <View style={{ marginBottom: 10 }}><Seg options={['Week', 'Month', '6 mo', 'Year']} active={1} /></View>
+    <FitScreen eyebrow="Training log" title="Trend" right="since jan">
+      <Head right={<Switcher options={['Wk', 'Mo', '6mo', 'Yr']} active={span} onChange={setSpan} />}>
+        Totals
+      </Head>
+      <Line label="Sessions" value="17" sub="this month" />
+      <Line label="Time" value="9:24" unit="hr" sub="this month" />
+      <Line label="Burned" value="7,120" unit="cal" sub="this month" />
+      <Line label="Per week" value="4.2" unit="sessions" sub="average" />
 
-      <Row style={{ gap: 8, marginBottom: 10 }}>
-        <Tile value="17" label="Sessions" />
-        <Tile value="9.4" unit=" hr" label="Time" />
-        <Tile value="7,120" label="Calories" />
-      </Row>
+      <Head right="sessions">By week</Head>
+      {WEEKS.map(([label, n, time]) => (
+        <View key={label}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', height: 30, gap: 10 }}>
+            <Fig size={10.5} tone={c.inkSoft} style={{ width: 78 }}>
+              {label}
+            </Fig>
+            {/* The bar gets its own flexing column so the duration beside it
+                keeps a fixed width and never wraps mid-figure. */}
+            <View style={{ flex: 1 }}>
+              <View style={{ height: 11, width: `${Math.round((n / peak) * 100)}%`, backgroundColor: c.fit }} />
+            </View>
+            <Fig size={9} tone={c.inkFaint} style={{ width: 46 }}>
+              {time}
+            </Fig>
+            <Fig size={13.5} weight="semi" style={{ minWidth: 76, textAlign: 'right' }}>
+              {n}
+            </Fig>
+          </View>
+          <Rule />
+        </View>
+      ))}
 
-      <Card>
-        <Ch>Sessions per week</Ch>
-        <Svg width="100%" height={70} viewBox="0 0 250 70">
-          {BARS.map((h, i) => (
-            <Rect key={i} x={6 + i * 20} y={62 - h} width={11} height={h} rx={3} fill={c.fit} />
-          ))}
-        </Svg>
-      </Card>
+      <Head right="best">Personal bests</Head>
+      {PBS.map(([lift, v, unit]) => (
+        <View key={lift}>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', height: 30, gap: 10 }}>
+            <Caps size={14} track={0.4} style={{ flex: 1 }}>
+              {lift}
+            </Caps>
+            <Fig size={13.5} weight="semi">
+              {v}
+            </Fig>
+            <Fig size={9} tone={c.inkFaint} style={{ width: 46 }}>
+              {unit}
+            </Fig>
+          </View>
+          <Rule />
+        </View>
+      ))}
 
-      <Card>
-        <Ch>Personal bests</Ch>
-        <KV k="Bench press" v="185 lb × 5" />
-        <KV k="Back squat" v="245 lb × 5" />
-        <KV k="Deadlift" v="315 lb × 3" />
-        <KV k="Fastest mile" v="8:39" />
-      </Card>
-    </Screen>
+      <Note>Placeholders until phase 8. Bests will come from logged sets, not from the watch.</Note>
+    </FitScreen>
   );
 }

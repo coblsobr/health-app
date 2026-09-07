@@ -23,6 +23,14 @@ export type Palette = {
   nutSoft: string;
   fit: string;
   fitSoft: string;
+  /**
+   * Fitness chrome. The spine is dark in both themes — the page under it still
+   * follows the user's light/dark choice like every other screen.
+   */
+  fitInk: string;
+  fitInkSoft: string;
+  fitRule: string;
+  fitDim: string;
   hlth: string;
   hlthSoft: string;
   // supporting
@@ -67,8 +75,12 @@ export const light: Palette = {
 
   nut: '#C8102E',
   nutSoft: '#FBE9EB',
-  fit: '#1E7A4C',
-  fitSoft: '#E4F2EA',
+  fit: '#2247FF',
+  fitSoft: '#E7EAFF',
+  fitInk: '#101218',
+  fitInkSoft: '#191C25',
+  fitRule: '#2A2E3A',
+  fitDim: '#7A8092',
   hlth: '#5B3E96',
   hlthSoft: '#EDE8F6',
 
@@ -113,8 +125,14 @@ export const dark: Palette = {
 
   nut: '#FF4D5E',
   nutSoft: '#3A1319',
-  fit: '#35B87A',
-  fitSoft: '#12291F',
+  fit: '#5F7BFF',
+  fitSoft: '#141A33',
+  // Warm-black in dark, so the spine sits under the warm page ground rather
+  // than beside it. A cool black next to #15120E reads as a rendering fault.
+  fitInk: '#080605',
+  fitInkSoft: '#151109',
+  fitRule: '#241E15',
+  fitDim: '#7C7261',
   hlth: '#9B7BE8',
   hlthSoft: '#221B33',
 
@@ -164,6 +182,17 @@ export const fonts = {
   medium: 'AlbertSans_500Medium',
   semi: 'AlbertSans_600SemiBold',
   bold: 'AlbertSans_700Bold',
+
+  // --- Fitness only ---------------------------------------------------------
+  // Fitness is deliberately a different typeface from Nutrition. Sharing one
+  // family across both was the main reason the two worlds felt like tabs of the
+  // same generated app rather than two tools that talk to each other.
+  /** Condensed caps for mastheads and headline figures. Scoreboard, not dashboard. */
+  fitDisplay: 'BebasNeue_400Regular',
+  /** Every figure in the ledger. Monospaced digits are what make columns line up. */
+  fitMono: 'IBMPlexMono_400Regular',
+  fitMonoMed: 'IBMPlexMono_500Medium',
+  fitMonoSemi: 'IBMPlexMono_600SemiBold',
 };
 
 /**

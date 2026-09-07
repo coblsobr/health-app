@@ -13,6 +13,11 @@ import { Caveat_600SemiBold } from '@expo-google-fonts/caveat';
 import {
   AlbertSans_400Regular, AlbertSans_500Medium, AlbertSans_600SemiBold, AlbertSans_700Bold,
 } from '@expo-google-fonts/albert-sans';
+// Fitness runs on its own two faces — see the note in theme/tokens.ts.
+import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
+import {
+  IBMPlexMono_400Regular, IBMPlexMono_500Medium, IBMPlexMono_600SemiBold,
+} from '@expo-google-fonts/ibm-plex-mono';
 
 import { ThemeProvider, useTheme } from '../theme/ThemeProvider';
 import { Icon, type IconName } from '../components/Icon';
@@ -121,6 +126,10 @@ export default function RootLayout() {
     AlbertSans_500Medium,
     AlbertSans_600SemiBold,
     AlbertSans_700Bold,
+    BebasNeue_400Regular,
+    IBMPlexMono_400Regular,
+    IBMPlexMono_500Medium,
+    IBMPlexMono_600SemiBold,
   });
 
   // Warm the database, but never block the UI on it. Screens that need storage

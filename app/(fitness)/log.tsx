@@ -1,35 +1,76 @@
-import { View, Text } from 'react-native';
-import { Screen } from '../../components/Screen';
-import { Card, Ch, Row, Sm, Xs, Chip, Btn } from '../../components/ui';
+import { useState } from 'react';
+import { View, Pressable } from 'react-native';
+import { FitScreen } from '../../components/fitChrome';
+import { Head, Fig, Caps, Rule, FitBtn, Note } from '../../components/fit';
 import { useTheme } from '../../theme/ThemeProvider';
 
-const TYPES = ['🏋️ Strength', '🏃 Run', '🚴 Ride', '🚶 Walk', '🧘 Mobility', '🏊 Swim'];
+const TYPES = ['Strength', 'Run', 'Ride', 'Walk', 'Mobility', 'Swim', 'Row', 'Other'];
+
+const FIELDS: [string, string][] = [
+  ['Duration', '45 min'],
+  ['Calories', 'auto-estimate'],
+  ['When', 'Today · 06:12'],
+  ['Where', 'Gym'],
+  ['Notes', '—'],
+];
 
 export default function Log() {
-  const { c, fonts } = useTheme();
+  const { c } = useTheme();
+  const [type, setType] = useState(0);
+
   return (
-    <Screen title="Log a workout">
-      <Card>
-        <Ch>Type</Ch>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          {TYPES.map((t, i) => <Chip key={t} label={t} on={i === 0} tone="fit" />)}
-        </View>
-      </Card>
+    <FitScreen eyebrow="Training log" title="New entry" right="mon 03 aug">
+      {/* A list, not a wrap of pills. Selection is a mark in the right column,
+          the way you would tick a line on a paper form. */}
+      <Head right="select">Type</Head>
+      {TYPES.map((t, i) => {
+        const on = i === type;
+        return (
+          <Pressable key={t} onPress={() => setType(i)}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', height: 30, gap: 10 }}>
+              <Fig size={9} tone={on ? c.fit : c.inkFaint} style={{ width: 22 }}>
+                {String(i + 1).padStart(2, '0')}
+              </Fig>
+              <Caps size={15} track={0.4} tone={on ? c.ink : c.inkSoft} style={{ flex: 1 }}>
+                {t}
+              </Caps>
+              <View
+                style={{
+                  width: 11,
+                  height: 11,
+                  backgroundColor: on ? c.fit : 'transparent',
+                  borderWidth: on ? 0 : 1,
+                  borderColor: c.line,
+                }}
+              />
+            </View>
+            <Rule />
+          </Pressable>
+        );
+      })}
 
-      <Card>
-        <Ch>Details</Ch>
-        {[['Duration', '45 min'], ['Calories', 'auto-estimate'], ['When', 'Today, 6:12 AM'], ['Notes', 'optional']].map(([k, v]) => (
-          <Row key={k} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.line }}>
-            <Sm style={{ color: c.ink }}>{k}</Sm>
-            <Text style={{ fontFamily: fonts.medium, fontSize: 11, color: c.inkFaint }}>{v}</Text>
-          </Row>
-        ))}
-      </Card>
+      <Head right="tap to edit">Details</Head>
+      {FIELDS.map(([k, v]) => (
+        <Pressable key={k}>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', height: 30, gap: 10 }}>
+            <Caps size={14} track={0.4} tone={c.inkSoft} style={{ width: 84 }}>
+              {k}
+            </Caps>
+            <Fig size={11.5} style={{ flex: 1, textAlign: 'right' }}>
+              {v}
+            </Fig>
+          </View>
+          <Rule />
+        </Pressable>
+      ))}
 
-      <Btn label="Save workout" tone="fit" />
-      <Xs style={{ textAlign: 'center', marginTop: 8 }}>
-        Manual logging is the backstop — most sessions will arrive from your watch automatically.
-      </Xs>
-    </Screen>
+      <FitBtn label="Save entry" />
+      <FitBtn label="Start a timer instead" ghost />
+
+      <Note>
+        Manual entry is the backstop. Most sessions will arrive from the watch on their own once
+        Health Connect is wired up.
+      </Note>
+    </FitScreen>
   );
 }

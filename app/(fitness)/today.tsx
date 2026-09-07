@@ -1,66 +1,66 @@
-import { View, Text } from 'react-native';
-import Svg, { Polyline } from 'react-native-svg';
-import { Screen } from '../../components/Screen';
-import { Ring } from '../../components/Ring';
-import { Card, Ch, Row, Sm, Xs, Divider } from '../../components/ui';
+import { View } from 'react-native';
+import { FitScreen } from '../../components/fitChrome';
+import { Head, Line, Entry, Fig, Caps, Spark, Note, Rule } from '../../components/fit';
 import { useTheme } from '../../theme/ThemeProvider';
 
 const SESSIONS = [
-  { icon: '🏋️', name: 'Push Day — Chest & Tri', meta: '6:12 AM · 48 min · 6 exercises', cal: '412' },
-  { icon: '🚶', name: 'Evening walk', meta: '7:40 PM · 32 min · 1.7 mi', cal: '154' },
+  { time: '06:12', name: 'Push — chest & tri', meta: '48 min · 6 exercises · gym', cal: '412' },
+  { time: '19:40', name: 'Evening walk', meta: '32 min · 1.7 mi · outdoors', cal: '154' },
 ];
 
+const HR = [62, 64, 88, 132, 148, 141, 156, 164, 149, 121, 96, 78, 71, 66, 63];
+
 export default function FitnessToday() {
-  const { c, fonts } = useTheme();
+  const { c } = useTheme();
+
   return (
-    <Screen title="Fitness" subtitle="Monday, Aug 3">
-      <Card style={{ paddingVertical: 14 }}>
-        <Ring value="566" label="CAL BURNED" pct={0.82} accent={c.fit} />
-        <Divider />
-        <Row>
-          {[['9,241', 'Steps'], ['54 min', 'Active'], ['4.1 mi', 'Distance']].map(([v, l]) => (
-            <View key={l} style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ fontFamily: fonts.displayBold, fontSize: 15, color: c.ink, letterSpacing: -0.5 }}>{v}</Text>
-              <Xs>{l}</Xs>
-            </View>
-          ))}
-        </Row>
-      </Card>
+    <FitScreen eyebrow="Training log · week 32" title="Mon 03 Aug" right="day 214">
+      <Head right="of target">Effort</Head>
+      <Line label="Burn" value="566" unit="/ 690 cal" pct={566 / 690} />
+      <Line label="Steps" value="9,241" unit="/ 10,000" pct={9241 / 10000} />
+      <Line label="Active" value="54" unit="/ 60 min" pct={54 / 60} />
+      <Line label="Distance" value="4.1" unit="mi" pct={4.1 / 5} />
+      <Line label="Standing" value="11" unit="/ 12 hr" pct={11 / 12} />
 
-      <Card>
-        <Ch>Today's sessions</Ch>
-        {SESSIONS.map((s, i) => (
-          <View key={s.name}>
-            {i ? <Divider style={{ marginVertical: 3 }} /> : null}
-            <Row style={{ paddingVertical: 8, gap: 9 }}>
-              <View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: c.cardAlt, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 15 }}>{s.icon}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: fonts.semi, fontSize: 12, color: c.ink }}>{s.name}</Text>
-                <Xs>{s.meta}</Xs>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={{ fontFamily: fonts.displayBold, fontSize: 12, color: c.fit }}>{s.cal}</Text>
-                <Xs>cal</Xs>
-              </View>
-            </Row>
-          </View>
-        ))}
-      </Card>
+      <Head right="cal">Sessions</Head>
+      {SESSIONS.map((s) => (
+        <Entry key={s.time} time={s.time} name={s.name} meta={s.meta} value={s.cal} />
+      ))}
 
-      <Card>
-        <Ch>Heart rate</Ch>
-        <Svg width="100%" height={56} viewBox="0 0 250 56">
-          <Polyline
-            points="4,44 20,42 34,26 46,16 58,22 70,14 84,20 96,12 110,24 124,40 140,42 156,38 172,30 186,34 200,41 216,43 232,39 246,44"
-            fill="none" stroke={c.nut} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
-          />
-        </Svg>
-        <Row><Xs>Resting 62</Xs><Xs>Avg 118</Xs><Xs>Peak 164</Xs></Row>
-      </Card>
+      <Head right="bpm">Heart rate</Head>
+      <View style={{ flexDirection: 'row', alignItems: 'center', height: 40, gap: 10 }}>
+        <View style={{ width: 64 }}>
+          <Caps size={12.5} tone={c.inkSoft} track={0.9}>
+            All day
+          </Caps>
+          <Fig size={8.5} tone={c.inkFaint}>
+            06:00–20:00
+          </Fig>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Spark values={HR} tone={c.fit} height={26} />
+        </View>
+        <View style={{ minWidth: 76, alignItems: 'flex-end' }}>
+          <Fig size={13.5} weight="semi">
+            164
+          </Fig>
+          <Fig size={8.5} tone={c.inkFaint}>
+            peak
+          </Fig>
+        </View>
+      </View>
+      <Rule />
+      <Line label="Resting" value="62" unit="bpm" />
+      <Line label="Average" value="118" unit="bpm" />
 
-      <Sm style={{ textAlign: 'center', marginTop: 10 }}>Health Connect wiring lands in Phase 8 — these are placeholders.</Sm>
-    </Screen>
+      <Head right="effect">Feeds nutrition</Head>
+      <Line label="Budget" value="+269" unit="cal / day" tone={c.nut} sub="this week" />
+      <Line label="Protein" value="+18" unit="g / day" tone={c.nut} sub="lift days" />
+
+      <Note>
+        Figures are placeholders. Health Connect wiring lands in phase 8 — after that these read from
+        the watch and the food budget moves on its own.
+      </Note>
+    </FitScreen>
   );
 }

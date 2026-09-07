@@ -30,9 +30,53 @@ Then open http://localhost:8081. For the phone, see "Shipping" below.
 - `babel.config.js` uses `react-native-worklets/plugin`, **not**
   `react-native-reanimated/plugin` — Reanimated 4 moved it. Must stay last.
 
-## Design direction — Paprika-adjacent, cookbook type
+## Two worlds, two design languages
 
-The UI was rebuilt away from a generated look. Keep these when adding screens:
+Nutrition and Fitness are deliberately **not** the same app with a different
+accent colour. They share the drawer, the theme system and the database; they
+share nothing visually. Read the section for the world you are editing and do
+not carry a primitive across the boundary.
+
+| | Nutrition (and Health) | Fitness |
+|---|---|---|
+| Idea | a cookbook | a training logbook |
+| Chrome | filled section-coloured app bar, centred title | black spine down the left edge, no bar |
+| Nav | bottom tabs | numbered rail in the spine |
+| Type | Fraunces + Albert Sans | Bebas Neue + IBM Plex Mono |
+| Colour | red on cream | cobalt `#2247FF` on cream, black spine |
+| Shapes | photos, rules, the odd card | hairline rules only, no cards at all |
+| Figures | serif, in place | monospace, right-aligned in one column |
+| Primitives | `components/ui.tsx`, `Screen` | `components/fit.tsx`, `fitChrome.tsx` |
+
+## Fitness — the logbook
+
+Every rule here is a reaction to a specific complaint: *"a centred number at the
+top, selection buttons at the bottom, a chart, and all that spaced out — that's
+how every single app made with Claude looks."*
+
+- **No cards.** Rows sit on the page ground, divided by full-bleed hairlines.
+- **No centred hero figure.** The number a screen exists to show goes at the end
+  of a line, in the same right-hand column as every other number.
+- **No standalone chart panel.** A magnitude is a bar *inside* its row, so the
+  chart and the table are one object.
+- **No segmented control and no bottom bar.** Period switching is `<Switcher>`,
+  small caps sitting on the right of a column head. Section switching is the
+  rail. Both were pill-row shapes; both are gone.
+- **Tight rhythm.** Rows are ~30px. Not 56 with 16 of air.
+- **Figures are monospaced and tabular** (`<Fig>`), labels are condensed caps
+  (`<Caps>`). Columns lining up is the whole point.
+- Primitives: `Head`, `Line`, `Entry`, `Rule`, `Fig`, `Caps`, `Switcher`,
+  `Spark`, `Note`, `FitBtn`, and `FitScreen` / `FitRail` for the chrome.
+- The rail navigates with `navigation.dispatch({ ...CommonActions.navigate(route),
+  target: state.key })`. **`navigation.navigate()` silently does nothing here** —
+  a navigator's own navigation object navigates in its *parent*, so it asked the
+  Drawer for a route it does not have. `CommonActions` comes from
+  `expo-router/react-navigation`, never from `@react-navigation/*`.
+- `tabBarPosition: 'left'` is what makes the navigator lay out in a row.
+
+## Nutrition — cookbook type
+
+Keep these when adding Nutrition or Health screens:
 
 - **Content sits on the page, separated by `<Rule />`.** A `<Card>` is for a
   thing that is genuinely an object. Do not wrap every group in one.
@@ -40,8 +84,9 @@ The UI was rebuilt away from a generated look. Keep these when adding screens:
   labels.
 - **No emoji as icons.** Use `components/Icon.tsx`.
 - **Each section owns a colour and wears it.** `Screen` fills the app bar with
-  the section tone: Nutrition red, Fitness green, Health purple. This is what
-  makes them feel like related apps rather than one app with tinted tabs.
+  the section tone: Nutrition red, Health purple. (Fitness does not use
+  `Screen` at all — see above.) Detecting the section is still needed for
+  Health.
   Detect the section with **`useSegments()`, never `usePathname()`** — the
   latter strips group segments, so `/(fitness)/today` arrives as `/today`.
 - **Saturated, not muted.** Confident colour is what separates a real app from
