@@ -32,4 +32,13 @@ jobs:
       # at succeeds, reports success, and reaches no phone.
       # --environment is required in --non-interactive mode.
       - name: Publish the update
-        run: eas update --branch main --environment production --message "${{ github.event.head_commit.message }}" --non-interactive
+        env:
+          # Through the environment, never interpolated into the command line.
+          # A commit message containing a double quote closes the --message
+          # string early and breaks the step, which is exactly how this failed
+          # the first time it met a real commit message. The same substitution
+          # would also let anything in a commit message run as shell.
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          SUMMARY=$(printf '%s' "$COMMIT_MESSAGE" | head -1 | cut -c1-180)
+          eas update --branch main --environment production --message "$SUMMARY" --non-interactive
