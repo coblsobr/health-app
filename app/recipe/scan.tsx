@@ -5,16 +5,17 @@ import { useRouter } from 'expo-router';
 import { RecipeForm } from '../../components/RecipeForm';
 import { PageCamera } from '../../components/PageCamera';
 import { Toast, B } from '../../components/ui';
-import { importFromImages, type OcrRecipe } from '../../lib/ocr';
+import { importFromSections, type OcrRecipe, type Shot } from '../../lib/ocr';
 import { saveRecipe, type RecipeInput } from '../../lib/db';
 import { useTheme } from '../../theme/ThemeProvider';
 
 /**
- * Scan a recipe.
+ * Scan a recipe: one framed photo of the ingredients, one of the directions.
  *
  * Opens straight into the viewfinder rather than a form with a Camera button
- * on it: choosing Camera from the Recipes screen has already said what you
- * want to do, so being asked again is a screen for nothing.
+ * on it — choosing Camera has already said what you want to do. The two shots
+ * are framed separately so the parser is told which half is which instead of
+ * having to work it out from a whole page, which on-device OCR does badly.
  */
 export default function ScanRecipe() {
   const { c, fonts } = useTheme();
@@ -26,14 +27,14 @@ export default function ScanRecipe() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<OcrRecipe | null>(null);
 
-  async function read(uris: string[]) {
-    setPages(uris);
+  async function read(shots: { ingredients: Shot; steps: Shot }) {
+    setPages([shots.ingredients.uri, shots.steps.uri]);
     setBusy(true);
     setError(null);
     try {
-      setResult(await importFromImages(uris));
+      setResult(await importFromSections(shots));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not read that image.');
+      setError(e instanceof Error ? e.message : 'Could not read those photos.');
     } finally {
       setBusy(false);
     }
@@ -50,7 +51,7 @@ export default function ScanRecipe() {
       <View style={{ flex: 1, backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
         <ActivityIndicator color={c.nut} />
         <Text style={{ fontFamily: fonts.body, fontSize: 14, color: c.inkSoft }}>
-          Reading {pages.length === 1 ? 'the page' : `${pages.length} pages`}…
+          Reading the ingredients and directions…
         </Text>
       </View>
     );

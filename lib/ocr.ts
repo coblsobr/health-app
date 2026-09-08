@@ -324,3 +324,254 @@ export async function importFromImages(uris: string[]): Promise<OcrRecipe & { ra
   const rawText = texts.join('\n');
   return { ...parseRecipeText(rawText), rawText };
 }
+
+/* ── framed capture ─────────────────────────────────────────── */
+
+/**
+ * Reading a whole cookbook page and working out which lines are ingredients
+ * and which are method is the least reliable thing this module does. When the
+ * shot is framed — one photo of the ingredients, one of the directions, each
+ * fitted inside a guide the way a bank makes you frame a cheque — the section
+ * is known rather than guessed, and the parsing gets much simpler and much
+ * more accurate.
+ */
+
+/** A rectangle in 0-1 units of the captured image. */
+export type Region = { x: number; y: number; w: number; h: number };
+
+/** The on-screen guide, shared by the camera overlay and the region filter. */
+export const GUIDE: Region = { x: 0.07, y: 0.17, w: 0.86, h: 0.6 };
+
+/**
+ * The preview and the captured frame do not always cover the same field of
+ * view, so the guide is widened before filtering. Cutting a wanted line is far
+ * worse than keeping a stray one: a stray line is visible in the review form
+ * and takes a tap to delete, whereas a dropped ingredient is silent.
+ */
+const REGION_SLACK = 0.09;
+
+type Frame = { top: number; left: number; width: number; height: number };
+type OcrLine = { text: string; frame?: Frame };
+type OcrBlock = { text: string; frame?: Frame; lines?: OcrLine[] };
+
+/**
+ * Keep the lines whose centre falls inside `region`, read in reading order.
+ *
+ * Returns null when filtering would leave almost nothing — that means the
+ * preview and the capture are framed differently on this device, and using
+ * every line is a far better outcome than returning two words.
+ */
+export function linesInRegion(
+  blocks: OcrBlock[],
+  imgW: number,
+  imgH: number,
+  region: Region = GUIDE
+): string[] | null {
+  if (!imgW || !imgH) return null;
+
+  const x0 = (region.x - REGION_SLACK) * imgW;
+  const y0 = (region.y - REGION_SLACK) * imgH;
+  const x1 = (region.x + region.w + REGION_SLACK) * imgW;
+  const y1 = (region.y + region.h + REGION_SLACK) * imgH;
+
+  const kept: { text: string; top: number; left: number }[] = [];
+  let total = 0;
+
+  for (const block of blocks) {
+    const lines = block.lines?.length ? block.lines : [{ text: block.text, frame: block.frame }];
+    for (const line of lines) {
+      if (!line.text?.trim()) continue;
+      total++;
+      const f = line.frame;
+      if (!f) continue; // no geometry — cannot place it, so it fails the filter
+      const cx = f.left + f.width / 2;
+      const cy = f.top + f.height / 2;
+      if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) {
+        kept.push({ text: line.text, top: f.top, left: f.left });
+      }
+    }
+  }
+
+  // Nothing to filter against, or the filter ate the page.
+  if (total === 0) return null;
+  if (kept.length < 2 || kept.length < total * 0.15) return null;
+
+  // Reading order. Lines within ~1.5% of the height of each other are treated
+  // as the same row, so two columns do not interleave by a few pixels.
+  const rowTol = imgH * 0.015;
+  kept.sort((a, b) => (Math.abs(a.top - b.top) <= rowTol ? a.left - b.left : a.top - b.top));
+  return kept.map((k) => k.text);
+}
+
+/** Drop a section heading the user framed along with the content. */
+function withoutHeading(lines: string[]): string[] {
+  const out = [...lines];
+  while (out.length && (detectSection(out[0]) !== null || !tidy(out[0]))) out.shift();
+  return out;
+}
+
+/**
+ * Ingredients from a shot framed on the ingredients.
+ *
+ * Every kept line is an ingredient. `looksLikeIngredient` is not used as a
+ * filter here — it exists to find ingredients hiding in a whole page, and
+ * against a framed shot it only throws away the ones written without a
+ * quantity ("salt and pepper", "a handful of parsley").
+ */
+export function parseIngredientLines(lines: string[]): string[] {
+  const cleaned = withoutHeading(lines)
+    .map(tidy)
+    .filter((l) => l && !NOISE_RE.test(l));
+  return mergeIngredientWraps(cleaned)
+    .map(tidy)
+    .filter((l) => l.length > 1);
+}
+
+/**
+ * A line ending mid-phrase, so the next line continues it.
+ *
+ * `mergeWrappedLines` cannot be used on an ingredient list: it joins anything
+ * starting lowercase to a previous line that lacks end punctuation, which is
+ * right for prose and wrong here — it turns "1 onion, diced" followed by "salt
+ * and pepper" into one ingredient and loses the salt. Almost every ingredient
+ * line is a fragment without end punctuation, so only an explicit dangling
+ * ending counts as a wrap.
+ */
+const WRAP_TAIL =
+  /(?:,|-|\b(?:into|with|and|or|of|for|plus|to|about|such as|cut|torn|roughly|finely|thinly)\s*)$/i;
+
+function mergeIngredientWraps(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    const prev = out[out.length - 1];
+    if (prev && prev.length < 120 && WRAP_TAIL.test(prev) && !STARTS_WITH_QTY.test(line)) {
+      out[out.length - 1] = prev.replace(/-$/, '') + (prev.endsWith('-') ? '' : ' ') + line;
+    } else {
+      out.push(line);
+    }
+  }
+  return out;
+}
+
+/**
+ * Directions from a shot framed on the directions.
+ *
+ * Numbered steps split on their numbers. Unnumbered prose is grouped into
+ * sentences, because a paragraph of method read as one 600-character step is
+ * useless to cook from.
+ */
+export function parseStepLines(lines: string[]): string[] {
+  const cleaned = withoutHeading(lines)
+    .map(tidy)
+    .filter((l) => l && !NOISE_RE.test(l));
+  if (cleaned.length === 0) return [];
+
+  const numbered = cleaned.some((l) => /^\(?\d{1,2}\)?[.):]\s+\S/.test(l));
+
+  if (numbered) {
+    const steps: string[] = [];
+    for (const line of cleaned) {
+      if (/^\(?\d{1,2}\)?[.):]\s+\S/.test(line)) {
+        steps.push(stripStepNumber(line));
+      } else if (steps.length) {
+        steps[steps.length - 1] += ' ' + line;
+      } else {
+        steps.push(line);
+      }
+    }
+    return steps.map(tidy).filter((s) => s.length > 2);
+  }
+
+  // Unnumbered: rejoin the wrapped lines into prose, then cut on sentence ends.
+  const prose = cleaned.join(' ').replace(/\s+/g, ' ').trim();
+  const sentences = prose.match(/[^.!?]+[.!?]+(?:["')\]]+)?\s*/g) ?? [prose];
+
+  // One sentence per step is choppy — "Heat the oil." should not be a step of
+  // its own — so short sentences fold into the one before them.
+  const steps: string[] = [];
+  for (const raw of sentences) {
+    const s = tidy(raw);
+    if (!s) continue;
+    const prev = steps[steps.length - 1];
+    if (prev && (s.length < 40 || prev.length < 40)) steps[steps.length - 1] = prev + ' ' + s;
+    else steps.push(s);
+  }
+  return steps.filter((s) => s.length > 2);
+}
+
+/** One framed capture: the file, and the pixel size it was taken at. */
+export type Shot = { uri: string; width: number; height: number };
+
+/** Raw OCR with geometry, so lines can be filtered to the guide rectangle. */
+async function recognizeBlocks(imageUri: string): Promise<{ blocks: OcrBlock[]; text: string }> {
+  const { Platform } = require('react-native') as typeof import('react-native');
+  if (Platform.OS === 'web') {
+    throw new Error('Photo import only works in the installed app.');
+  }
+  let TextRecognition: {
+    recognize: (uri: string) => Promise<{ text: string; blocks?: OcrBlock[] }>;
+  };
+  try {
+    TextRecognition = require('@react-native-ml-kit/text-recognition').default;
+  } catch {
+    throw new Error('Text recognition is not available in this build. Install the latest APK.');
+  }
+  const result = await TextRecognition.recognize(imageUri);
+  return { blocks: result?.blocks ?? [], text: result?.text ?? '' };
+}
+
+/** Lines from one framed shot, region-filtered when the geometry allows it. */
+async function readShot(shot: Shot): Promise<string[]> {
+  const { blocks, text } = await recognizeBlocks(shot.uri);
+  const framed = linesInRegion(blocks, shot.width, shot.height);
+  if (framed) return framed;
+  // No geometry, or the filter would have eaten the page — use everything.
+  return text.split(/\r?\n/);
+}
+
+/**
+ * Build a recipe from two framed shots.
+ *
+ * The title, servings and timings are looked for in the ingredients shot,
+ * since that is the half of the page they usually sit above. None of them is
+ * required: the review form is where you correct what the camera could not
+ * see, and a missing name is a visible blank rather than a silent wrong guess.
+ */
+export async function importFromSections(shots: {
+  ingredients: Shot;
+  steps: Shot;
+}): Promise<OcrRecipe & { rawText: string }> {
+  const [ingLines, stepLines] = await Promise.all([
+    readShot(shots.ingredients),
+    readShot(shots.steps),
+  ]);
+
+  const ingredients = parseIngredientLines(ingLines);
+  const steps = parseStepLines(stepLines);
+
+  const ingText = ingLines.join('\n');
+  const servings = parseServings(ingText) ?? parseServings(stepLines.join('\n'));
+  const prepMin = labelledDuration(ingLines, /\bprep(aration)?\b/i);
+  const cookMin =
+    labelledDuration(ingLines, /\b(cook|bake|roast)(ing)?\b/i) ??
+    deriveCookFromTotal(ingLines, prepMin);
+
+  const warnings: string[] = [];
+  if (ingredients.length === 0) warnings.push('No ingredients were readable in the first photo.');
+  if (steps.length === 0) warnings.push('No directions were readable in the second photo.');
+  if (ingredients.length && ingredients.length < 3) {
+    warnings.push('Only a few ingredients came through — check none are missing.');
+  }
+
+  return {
+    name: null, // the frame is around the list, not the title — you name it
+    ingredients,
+    steps,
+    servings,
+    prepMin,
+    cookMin,
+    notes: null,
+    warnings,
+    rawText: [ingText, stepLines.join('\n')].join('\n\n'),
+  };
+}

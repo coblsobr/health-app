@@ -60,10 +60,33 @@ behind it was four times the furniture this needs.
 
 Camera opens straight into a live viewfinder (`components/PageCamera.tsx`,
 expo-camera): shutter in the middle, gallery in the bottom-left corner, close
-top-left, thumbnails stacking up to four pages for a cookbook spread. It does
-**not** hand off to the system camera app, and there is no intermediate form
-asking again what you already chose. `takePictureAsync` must wait for
-`onCameraReady` — called earlier it returns a blank frame on Android.
+top-left. It does **not** hand off to the system camera app, and there is no
+intermediate form asking again what you already chose. `takePictureAsync` must
+wait for `onCameraReady` — called earlier it returns a blank frame on Android.
+
+**Two framed shots, not one page.** Shot 1 is the ingredients, shot 2 the
+directions, each fitted inside a guide rectangle the way a bank frames a
+cheque. This is the important design decision in the whole scan path: reading
+a full page and working out which lines are ingredients and which are method
+is the least reliable thing the app does, and on-device OCR is nowhere near
+good enough for it. Framing tells the parser what it is looking at.
+
+- `GUIDE` in `lib/ocr.ts` is shared by the overlay and the region filter, so
+  the rectangle drawn and the rectangle filtered against cannot drift apart.
+- ML Kit returns a `frame` per line, so filtering to the guide is arithmetic —
+  no cropping library, no native module, ships over the air.
+- `linesInRegion` returns **null** rather than a short list when filtering
+  would leave almost nothing, and the caller falls back to the full text. The
+  preview and the capture do not always cover the same field of view, and a
+  silently dropped ingredient is far worse than a stray line you can see and
+  delete. The guide is also widened by `REGION_SLACK` for the same reason.
+- Ingredients use `mergeIngredientWraps`, **not** `mergeWrappedLines`. The
+  prose version joins any lowercase line to a previous line lacking end
+  punctuation — correct for method, catastrophic for a list, where it merges
+  "1 onion, diced" with "salt and pepper" and loses the salt. Only an explicit
+  dangling ending (a comma, or a word like "into"/"with") counts as a wrap.
+- The recipe **name** is deliberately left blank: the frame is around the list,
+  not the title. A visible blank the user fills in beats a confident wrong guess.
 
 Nutrition, Fitness and Health still exist and still work; they are reachable
 from the drawer and are not being developed. Do not restyle them.

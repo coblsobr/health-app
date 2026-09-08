@@ -3,79 +3,83 @@ import { View, Text, Pressable, Image, ActivityIndicator, Platform } from 'react
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import { GUIDE, type Shot } from '../lib/ocr';
 import { useTheme } from '../theme/ThemeProvider';
 
 /**
- * A live camera for photographing a recipe page.
+ * Two framed captures: the ingredients, then the directions.
  *
- * The old flow was a form with a "📷 Camera" button that handed off to the
- * system camera app. This is the shape people expect instead: the viewfinder
- * fills the screen, the shutter is the big circle, and the gallery sits in the
- * corner next to it.
+ * Photographing a whole cookbook page and working out which lines are
+ * ingredients and which are method is the least reliable thing this app does,
+ * and on-device OCR is not close to doing it well. Framing each half — the way
+ * a bank makes you fit a cheque inside a rectangle — means the section is
+ * known rather than guessed, and only the text inside the frame is read.
  *
- * Cookbook recipes often run across two pages, so shots stack up as thumbnails
- * and `onDone` receives all of them at once.
+ * The guide is shared with `lib/ocr.ts` so the rectangle drawn here and the
+ * rectangle filtered against are the same rectangle.
  */
+
+type Step = { key: 'ingredients' | 'directions'; title: string; hint: string };
+
+const STEPS: Step[] = [
+  { key: 'ingredients', title: 'Ingredients', hint: 'Fit the ingredients list inside the frame' },
+  { key: 'directions', title: 'Directions', hint: 'Now fit the method inside the frame' },
+];
+
 export function PageCamera({
   onDone,
   onCancel,
-  max = 4,
 }: {
-  onDone: (uris: string[]) => void;
+  onDone: (shots: { ingredients: Shot; steps: Shot }) => void;
   onCancel: () => void;
-  max?: number;
 }) {
   const { c, fonts } = useTheme();
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const camera = useRef<CameraView>(null);
 
-  const [pages, setPages] = useState<string[]>([]);
+  const [taken, setTaken] = useState<Shot[]>([]);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const index = taken.length; // 0 = ingredients, 1 = directions
+  const step = STEPS[Math.min(index, STEPS.length - 1)];
+
+  function accept(next: Shot[]) {
+    if (next.length >= 2) onDone({ ingredients: next[0], steps: next[1] });
+    else setTaken(next);
+  }
+
   async function shoot() {
     // takePictureAsync before onCameraReady returns a blank frame on Android.
-    if (!camera.current || !ready || busy || pages.length >= max) return;
+    if (!camera.current || !ready || busy) return;
     setBusy(true);
     try {
       // Full quality: OCR accuracy depends almost entirely on resolution.
       const shot = await camera.current.takePictureAsync({ quality: 1 });
-      if (shot?.uri) setPages((p) => [...p, shot.uri].slice(0, max));
+      if (shot?.uri) {
+        accept([...taken, { uri: shot.uri, width: shot.width, height: shot.height }]);
+      }
     } catch {
-      // A failed shot is not worth an error screen — the shutter just does
-      // nothing and the viewfinder is still there to try again.
+      // A failed shot is not worth an error screen — the shutter does nothing
+      // and the viewfinder is still there to try again.
     } finally {
       setBusy(false);
     }
   }
 
   async function fromGallery() {
-    // The system picker returns only what you choose, so this needs no
-    // gallery permission of its own.
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 1,
-      allowsMultipleSelection: true,
-      selectionLimit: max - pages.length,
-    });
-    if (!res.canceled) {
-      const picked = res.assets.map((a) => a.uri);
-      // Picking from the gallery is a complete choice in itself, so it goes
-      // straight through rather than making you press Use as well.
-      onDone([...pages, ...picked].slice(0, max));
-    }
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+    if (res.canceled || !res.assets[0]) return;
+    const a = res.assets[0];
+    // A picked photo has no guide to have been framed against, so its width
+    // and height are passed as zero and the region filter stands down.
+    accept([...taken, { uri: a.uri, width: 0, height: 0 }]);
   }
 
   /* ── the camera cannot run here ── */
   if (Platform.OS === 'web') {
-    return (
-      <Fallback
-        message="The camera only works in the installed app. You can still pick a screenshot."
-        onPick={fromGallery}
-        onCancel={onCancel}
-      />
-    );
+    return <Fallback message="The camera only works in the installed app." onPick={fromGallery} onCancel={onCancel} />;
   }
 
   if (!permission) {
@@ -92,7 +96,7 @@ export function PageCamera({
         message={
           permission.canAskAgain
             ? 'Photographing a page needs the camera.'
-            : 'Camera access is off for this app. Turn it on in Settings, or pick a screenshot instead.'
+            : 'Camera access is off for this app. Turn it on in Settings, or pick a photo instead.'
         }
         onPick={fromGallery}
         onCancel={onCancel}
@@ -104,12 +108,28 @@ export function PageCamera({
   /* ── the viewfinder ── */
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
-      <CameraView
-        ref={camera}
-        style={{ flex: 1 }}
-        facing="back"
-        onCameraReady={() => setReady(true)}
-      />
+      <CameraView ref={camera} style={{ flex: 1 }} facing="back" onCameraReady={() => setReady(true)} />
+
+      <Guide />
+
+      {/* which shot you are on */}
+      <View style={{ position: 'absolute', top: insets.top + 54, left: 0, right: 0, alignItems: 'center' }}>
+        <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: c.nut, letterSpacing: 1.6 }}>
+          {(index + 1).toString()} OF 2 · {step.title.toUpperCase()}
+        </Text>
+        <Text
+          style={{
+            fontFamily: fonts.semi,
+            fontSize: 14,
+            color: '#fff',
+            marginTop: 5,
+            textShadowColor: 'rgba(0,0,0,0.8)',
+            textShadowRadius: 5,
+          }}
+        >
+          {step.hint}
+        </Text>
+      </View>
 
       {/* close */}
       <Pressable
@@ -132,21 +152,6 @@ export function PageCamera({
         <Text style={{ color: '#fff', fontSize: 19, lineHeight: 22 }}>✕</Text>
       </Pressable>
 
-      {pages.length ? (
-        <Text
-          style={{
-            position: 'absolute',
-            top: insets.top + 19,
-            alignSelf: 'center',
-            fontFamily: fonts.semi,
-            fontSize: 12.5,
-            color: '#fff',
-          }}
-        >
-          {pages.length} of {max} pages
-        </Text>
-      ) : null}
-
       <View
         style={{
           position: 'absolute',
@@ -162,12 +167,11 @@ export function PageCamera({
           backgroundColor: 'rgba(0,0,0,0.34)',
         }}
       >
-        {/* gallery, in the corner — the last shot shows here once there is one */}
+        {/* gallery, in the corner — or the first shot, tap to retake it */}
         <Pressable
-          onPress={pages.length ? undefined : fromGallery}
-          onLongPress={fromGallery}
+          onPress={taken.length ? () => setTaken([]) : fromGallery}
           hitSlop={12}
-          accessibilityLabel={pages.length ? 'Pages taken' : 'Choose from your photos'}
+          accessibilityLabel={taken.length ? 'Retake the ingredients photo' : 'Choose from your photos'}
           accessibilityRole="button"
           style={{
             width: 46,
@@ -180,20 +184,13 @@ export function PageCamera({
             justifyContent: 'center',
           }}
         >
-          {pages.length ? (
+          {taken.length ? (
             <>
-              <Image source={{ uri: pages[pages.length - 1] }} style={{ width: '100%', height: '100%' }} />
-              <View
-                style={{
-                  position: 'absolute',
-                  right: 0,
-                  bottom: 0,
-                  paddingHorizontal: 4,
-                  backgroundColor: 'rgba(0,0,0,0.65)',
-                }}
-              >
-                <Text style={{ color: '#fff', fontFamily: fonts.bold, fontSize: 10 }}>{pages.length}</Text>
-              </View>
+              <Image source={{ uri: taken[0].uri }} style={{ width: '100%', height: '100%' }} />
+              <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)' }} />
+              <Text style={{ position: 'absolute', color: '#fff', fontFamily: fonts.bold, fontSize: 9 }}>
+                RETAKE
+              </Text>
             </>
           ) : (
             <GalleryGlyph />
@@ -203,7 +200,7 @@ export function PageCamera({
         {/* shutter */}
         <Pressable
           onPress={shoot}
-          accessibilityLabel="Take a photo of the page"
+          accessibilityLabel={`Photograph the ${step.title.toLowerCase()}`}
           accessibilityRole="button"
           style={{
             width: 72,
@@ -213,30 +210,49 @@ export function PageCamera({
             borderColor: 'rgba(255,255,255,0.9)',
             alignItems: 'center',
             justifyContent: 'center',
-            opacity: ready && pages.length < max ? 1 : 0.45,
+            opacity: ready && !busy ? 1 : 0.45,
           }}
         >
           <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#fff' }} />
         </Pressable>
 
-        {/* use what has been taken */}
-        <Pressable
-          onPress={() => pages.length && onDone(pages)}
-          hitSlop={12}
-          accessibilityLabel="Use these pages"
-          accessibilityRole="button"
-          style={{ width: 46, alignItems: 'flex-end' }}
-        >
-          <Text
-            style={{
-              fontFamily: fonts.bold,
-              fontSize: 15,
-              color: pages.length ? c.nut : 'rgba(255,255,255,0.4)',
-            }}
-          >
-            {pages.length ? 'Read' : ''}
-          </Text>
-        </Pressable>
+        <View style={{ width: 46 }} />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The frame. Everything outside it is dimmed so it is obvious what will be
+ * read, and only the corners are drawn — a full rectangle competes with the
+ * text you are trying to line up inside it.
+ */
+function Guide() {
+  const { c } = useTheme();
+  const shade = 'rgba(0,0,0,0.45)';
+  const pct = (n: number) => `${n * 100}%` as const;
+
+  const corner = {
+    position: 'absolute' as const,
+    width: 26,
+    height: 26,
+    borderColor: c.nut,
+  };
+
+  return (
+    <View style={{ position: 'absolute', inset: 0 }} pointerEvents="none">
+      {/* dim outside the frame */}
+      <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: pct(GUIDE.y), backgroundColor: shade }} />
+      <View style={{ position: 'absolute', left: 0, right: 0, top: pct(GUIDE.y + GUIDE.h), bottom: 0, backgroundColor: shade }} />
+      <View style={{ position: 'absolute', left: 0, width: pct(GUIDE.x), top: pct(GUIDE.y), height: pct(GUIDE.h), backgroundColor: shade }} />
+      <View style={{ position: 'absolute', right: 0, width: pct(1 - GUIDE.x - GUIDE.w), top: pct(GUIDE.y), height: pct(GUIDE.h), backgroundColor: shade }} />
+
+      {/* corners */}
+      <View style={{ position: 'absolute', left: pct(GUIDE.x), top: pct(GUIDE.y), width: pct(GUIDE.w), height: pct(GUIDE.h) }}>
+        <View style={{ ...corner, top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3 }} />
+        <View style={{ ...corner, top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3 }} />
+        <View style={{ ...corner, bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3 }} />
+        <View style={{ ...corner, bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3 }} />
       </View>
     </View>
   );
@@ -257,24 +273,8 @@ function Fallback({
   const { c, fonts } = useTheme();
   const insets = useSafeAreaInsets();
   return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: c.surface,
-        paddingTop: insets.top + 40,
-        paddingHorizontal: 26,
-        alignItems: 'center',
-      }}
-    >
-      <Text
-        style={{
-          fontFamily: fonts.body,
-          fontSize: 14.5,
-          color: c.inkSoft,
-          textAlign: 'center',
-          lineHeight: 21,
-        }}
-      >
+    <View style={{ flex: 1, backgroundColor: c.surface, paddingTop: insets.top + 40, paddingHorizontal: 26, alignItems: 'center' }}>
+      <Text style={{ fontFamily: fonts.body, fontSize: 14.5, color: c.inkSoft, textAlign: 'center', lineHeight: 21 }}>
         {message}
       </Text>
 
