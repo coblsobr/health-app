@@ -4,8 +4,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { RecipeForm } from '../../components/RecipeForm';
 import { PageCamera } from '../../components/PageCamera';
+import { CropFrame } from '../../components/CropFrame';
 import { Toast, B } from '../../components/ui';
-import { importFromSections, type OcrRecipe, type Shot } from '../../lib/ocr';
+import { importFromSections, type OcrRecipe, type Region, type Shot } from '../../lib/ocr';
 import { saveRecipe, type RecipeInput } from '../../lib/db';
 import { useTheme } from '../../theme/ThemeProvider';
 
@@ -17,12 +18,26 @@ import { useTheme } from '../../theme/ThemeProvider';
  * are framed separately so the parser is told which half is which instead of
  * having to work it out from a whole page, which on-device OCR does badly.
  */
+type Photo = { uri: string; width: number; height: number };
+
+const CROP_STEPS = [
+  { title: 'Ingredients', hint: 'Drag the frame around the ingredients list.' },
+  { title: 'Directions', hint: 'Now drag it around the method.' },
+];
+
 export default function ScanRecipe() {
   const { c, fonts } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
   const [pages, setPages] = useState<string[]>([]);
+  /**
+   * Gallery photos waiting to be framed. One photo means both halves are on
+   * it and you draw two rectangles on the same image; two photos means one
+   * each. `cropped` holds the shots confirmed so far.
+   */
+  const [picked, setPicked] = useState<Photo[] | null>(null);
+  const [cropped, setCropped] = useState<Shot[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<OcrRecipe | null>(null);
@@ -38,6 +53,22 @@ export default function ScanRecipe() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** One rectangle confirmed. Two of them and we can read. */
+  function addCrop(region: Region | null) {
+    if (!picked) return;
+    const step = cropped.length; // 0 = ingredients, 1 = directions
+    // One photo carries both halves; two photos carry one each.
+    const photo = picked[Math.min(step, picked.length - 1)];
+    const next = [...cropped, { ...photo, region: region ?? undefined }];
+    if (next.length < 2) {
+      setCropped(next);
+      return;
+    }
+    setPicked(null);
+    setCropped([]);
+    read({ ingredients: next[0], steps: next[1] });
   }
 
   async function save(input: RecipeInput) {
@@ -133,6 +164,36 @@ export default function ScanRecipe() {
     );
   }
 
+  /* ── framing a gallery photo ── */
+  if (picked) {
+    const step = CROP_STEPS[cropped.length];
+    const photo = picked[Math.min(cropped.length, picked.length - 1)];
+    return (
+      <CropFrame
+        // Remount per step so the rectangle resets rather than keeping the
+        // one just confirmed for the other half of the page.
+        key={`${photo.uri}-${cropped.length}`}
+        uri={photo.uri}
+        width={photo.width}
+        height={photo.height}
+        title={step.title}
+        hint={step.hint}
+        onDone={addCrop}
+        onSkip={() => addCrop(null)}
+        onBack={() => {
+          if (cropped.length) setCropped(cropped.slice(0, -1));
+          else setPicked(null);
+        }}
+      />
+    );
+  }
+
   /* ── the camera ── */
-  return <PageCamera onDone={read} onCancel={() => router.back()} />;
+  return (
+    <PageCamera
+      onDone={read}
+      onPicked={(photos) => { setCropped([]); setPicked(photos); }}
+      onCancel={() => router.back()}
+    />
+  );
 }

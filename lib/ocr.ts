@@ -369,10 +369,15 @@ export function linesInRegion(
 ): string[] | null {
   if (!imgW || !imgH) return null;
 
-  const x0 = (region.x - REGION_SLACK) * imgW;
-  const y0 = (region.y - REGION_SLACK) * imgH;
-  const x1 = (region.x + region.w + REGION_SLACK) * imgW;
-  const y1 = (region.y + region.h + REGION_SLACK) * imgH;
+  // Only the camera guide needs slack, because the preview and the capture do
+  // not always cover the same field of view. A rectangle dragged over a photo
+  // is already exactly where the user put it, so widening it there would pull
+  // back in the lines they deliberately excluded.
+  const slack = region === GUIDE ? REGION_SLACK : 0.01;
+  const x0 = (region.x - slack) * imgW;
+  const y0 = (region.y - slack) * imgH;
+  const x1 = (region.x + region.w + slack) * imgW;
+  const y1 = (region.y + region.h + slack) * imgH;
 
   const kept: { text: string; top: number; left: number }[] = [];
   let total = 0;
@@ -499,8 +504,15 @@ export function parseStepLines(lines: string[]): string[] {
   return steps.filter((s) => s.length > 2);
 }
 
-/** One framed capture: the file, and the pixel size it was taken at. */
-export type Shot = { uri: string; width: number; height: number };
+/**
+ * One capture: the file, the pixel size it was taken at, and which part of it
+ * to read.
+ *
+ * `region` is the camera's `GUIDE` for a shot taken through the viewfinder, or
+ * the rectangle dragged over a gallery photo. Leave it out and the whole image
+ * is read — the honest fallback for a photo nobody framed.
+ */
+export type Shot = { uri: string; width: number; height: number; region?: Region };
 
 /** Raw OCR with geometry, so lines can be filtered to the guide rectangle. */
 async function recognizeBlocks(imageUri: string): Promise<{ blocks: OcrBlock[]; text: string }> {
@@ -520,12 +532,15 @@ async function recognizeBlocks(imageUri: string): Promise<{ blocks: OcrBlock[]; 
   return { blocks: result?.blocks ?? [], text: result?.text ?? '' };
 }
 
-/** Lines from one framed shot, region-filtered when the geometry allows it. */
+/** Lines from one shot, region-filtered when there is a region to filter to. */
 async function readShot(shot: Shot): Promise<string[]> {
   const { blocks, text } = await recognizeBlocks(shot.uri);
-  const framed = linesInRegion(blocks, shot.width, shot.height);
-  if (framed) return framed;
-  // No geometry, or the filter would have eaten the page — use everything.
+  if (shot.region) {
+    const framed = linesInRegion(blocks, shot.width, shot.height, shot.region);
+    if (framed) return framed;
+    // The filter would have eaten the page. Better to over-read than to drop
+    // an ingredient silently.
+  }
   return text.split(/\r?\n/);
 }
 

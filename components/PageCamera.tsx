@@ -28,9 +28,16 @@ const STEPS: Step[] = [
 
 export function PageCamera({
   onDone,
+  onPicked,
   onCancel,
 }: {
   onDone: (shots: { ingredients: Shot; steps: Shot }) => void;
+  /**
+   * Photos chosen from the gallery. They were never framed against the guide,
+   * so the parent takes over and has the user draw the rectangles instead of
+   * this screen quietly reading the whole image.
+   */
+  onPicked: (photos: { uri: string; width: number; height: number }[]) => void;
   onCancel: () => void;
 }) {
   const { c, fonts } = useTheme();
@@ -58,7 +65,8 @@ export function PageCamera({
       // Full quality: OCR accuracy depends almost entirely on resolution.
       const shot = await camera.current.takePictureAsync({ quality: 1 });
       if (shot?.uri) {
-        accept([...taken, { uri: shot.uri, width: shot.width, height: shot.height }]);
+        // Taken through the guide, so that is the region to read.
+        accept([...taken, { uri: shot.uri, width: shot.width, height: shot.height, region: GUIDE }]);
       }
     } catch {
       // A failed shot is not worth an error screen — the shutter does nothing
@@ -69,12 +77,16 @@ export function PageCamera({
   }
 
   async function fromGallery() {
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
-    if (res.canceled || !res.assets[0]) return;
-    const a = res.assets[0];
-    // A picked photo has no guide to have been framed against, so its width
-    // and height are passed as zero and the region filter stands down.
-    accept([...taken, { uri: a.uri, width: 0, height: 0 }]);
+    // One photo if the ingredients and method are both on it, two if they are
+    // on separate pages. Either way the parent asks you to draw the frames.
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 1,
+      allowsMultipleSelection: true,
+      selectionLimit: 2,
+    });
+    if (res.canceled || !res.assets.length) return;
+    onPicked(res.assets.map((a) => ({ uri: a.uri, width: a.width, height: a.height })));
   }
 
   /* ── the camera cannot run here ── */

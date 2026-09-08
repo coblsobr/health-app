@@ -88,6 +88,26 @@ good enough for it. Framing tells the parser what it is looking at.
 - The recipe **name** is deliberately left blank: the frame is around the list,
   not the title. A visible blank the user fills in beats a confident wrong guess.
 
+**Gallery photos are framed too**, with `components/CropFrame.tsx` — drag a
+rectangle over the photo instead of through a viewfinder. One photo carrying
+both halves gets two rectangles drawn on it; two photos get one each. The
+rectangle becomes the shot's `region`, so a crop and a camera guide are the
+same thing to the parser and nothing is cropped in the image sense.
+
+- A `Shot` without a `region` is read **whole**. That is the honest fallback
+  for a photo nobody framed, and it is what "Use the whole photo" does.
+- `linesInRegion` widens the camera's `GUIDE` by `REGION_SLACK` but a dragged
+  rectangle by almost nothing: the preview and the capture can disagree about
+  the field of view, whereas a dragged rectangle is exactly where the user put
+  it, and widening it would pull back the lines they meant to exclude.
+- `CropFrame` reads live state through refs inside its PanResponder handlers.
+  The handlers are created once, so closing over the first render's state
+  freezes the rectangle after a single drag.
+- Testing drag on the web preview needs **touch** events, not mouse events —
+  the mobile viewport puts react-native-web in touch mode and synthetic
+  MouseEvents are never translated. That is why a drag looks like it does
+  nothing when you simulate it wrong; check with touch before assuming a bug.
+
 Nutrition, Fitness and Health still exist and still work; they are reachable
 from the drawer and are not being developed. Do not restyle them.
 
