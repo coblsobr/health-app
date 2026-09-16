@@ -3,41 +3,28 @@ import { View, Text, Pressable, Image, ActivityIndicator, Platform } from 'react
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { GUIDE, type Shot } from '../lib/ocr';
+import type { Shot } from '../lib/ocr';
 import { useTheme } from '../theme/ThemeProvider';
 
 /**
- * Two framed captures: the ingredients, then the directions.
+ * Photograph a recipe page.
  *
- * Photographing a whole cookbook page and working out which lines are
- * ingredients and which are method is the least reliable thing this app does,
- * and on-device OCR is not close to doing it well. Framing each half — the way
- * a bank makes you fit a cheque inside a rectangle — means the section is
- * known rather than guessed, and only the text inside the frame is read.
+ * Shoot the whole page. Framing the ingredients and the directions as separate
+ * captures was a dead end — it made you do the parser's job by hand, twice,
+ * for every recipe. The text comes off the page fine; splitting it is the
+ * parser's problem to solve.
  *
- * The guide is shared with `lib/ocr.ts` so the rectangle drawn here and the
- * rectangle filtered against are the same rectangle.
+ * A recipe running across a spread takes more than one shot, so pages stack up
+ * to four and are read together as one recipe.
  */
 
-type Step = { key: 'ingredients' | 'directions'; title: string; hint: string };
-
-const STEPS: Step[] = [
-  { key: 'ingredients', title: 'Ingredients', hint: 'Fit the ingredients list inside the frame' },
-  { key: 'directions', title: 'Directions', hint: 'Now fit the method inside the frame' },
-];
+const MAX = 4;
 
 export function PageCamera({
   onDone,
-  onPicked,
   onCancel,
 }: {
-  onDone: (shots: { ingredients: Shot; steps: Shot }) => void;
-  /**
-   * Photos chosen from the gallery. They were never framed against the guide,
-   * so the parent takes over and has the user draw the rectangles instead of
-   * this screen quietly reading the whole image.
-   */
-  onPicked: (photos: { uri: string; width: number; height: number }[]) => void;
+  onDone: (shots: Shot[]) => void;
   onCancel: () => void;
 }) {
   const { c, fonts } = useTheme();
@@ -45,28 +32,19 @@ export function PageCamera({
   const [permission, requestPermission] = useCameraPermissions();
   const camera = useRef<CameraView>(null);
 
-  const [taken, setTaken] = useState<Shot[]>([]);
+  const [pages, setPages] = useState<Shot[]>([]);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const index = taken.length; // 0 = ingredients, 1 = directions
-  const step = STEPS[Math.min(index, STEPS.length - 1)];
-
-  function accept(next: Shot[]) {
-    if (next.length >= 2) onDone({ ingredients: next[0], steps: next[1] });
-    else setTaken(next);
-  }
-
   async function shoot() {
     // takePictureAsync before onCameraReady returns a blank frame on Android.
-    if (!camera.current || !ready || busy) return;
+    if (!camera.current || !ready || busy || pages.length >= MAX) return;
     setBusy(true);
     try {
       // Full quality: OCR accuracy depends almost entirely on resolution.
       const shot = await camera.current.takePictureAsync({ quality: 1 });
       if (shot?.uri) {
-        // Taken through the guide, so that is the region to read.
-        accept([...taken, { uri: shot.uri, width: shot.width, height: shot.height, region: GUIDE }]);
+        setPages((p) => [...p, { uri: shot.uri, width: shot.width, height: shot.height }].slice(0, MAX));
       }
     } catch {
       // A failed shot is not worth an error screen — the shutter does nothing
@@ -77,16 +55,18 @@ export function PageCamera({
   }
 
   async function fromGallery() {
-    // One photo if the ingredients and method are both on it, two if they are
-    // on separate pages. Either way the parent asks you to draw the frames.
+    // The system picker returns only what you choose, so this needs no gallery
+    // permission of its own.
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 1,
       allowsMultipleSelection: true,
-      selectionLimit: 2,
+      selectionLimit: MAX - pages.length,
     });
     if (res.canceled || !res.assets.length) return;
-    onPicked(res.assets.map((a) => ({ uri: a.uri, width: a.width, height: a.height })));
+    const picked = res.assets.map((a) => ({ uri: a.uri, width: a.width, height: a.height }));
+    // Picking is a complete choice in itself, so it goes straight through.
+    onDone([...pages, ...picked].slice(0, MAX));
   }
 
   /* ── the camera cannot run here ── */
@@ -122,28 +102,22 @@ export function PageCamera({
     <View style={{ flex: 1, backgroundColor: '#000' }}>
       <CameraView ref={camera} style={{ flex: 1 }} facing="back" onCameraReady={() => setReady(true)} />
 
-      <Guide />
-
-      {/* which shot you are on */}
       <View style={{ position: 'absolute', top: insets.top + 54, left: 0, right: 0, alignItems: 'center' }}>
-        <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: c.nut, letterSpacing: 1.6 }}>
-          {(index + 1).toString()} OF 2 · {step.title.toUpperCase()}
-        </Text>
         <Text
           style={{
             fontFamily: fonts.semi,
             fontSize: 14,
             color: '#fff',
-            marginTop: 5,
             textShadowColor: 'rgba(0,0,0,0.8)',
             textShadowRadius: 5,
           }}
         >
-          {step.hint}
+          {pages.length === 0
+            ? 'Fill the frame with the recipe page'
+            : `${pages.length} page${pages.length === 1 ? '' : 's'} — add another or tap Read`}
         </Text>
       </View>
 
-      {/* close */}
       <Pressable
         onPress={onCancel}
         hitSlop={14}
@@ -179,11 +153,12 @@ export function PageCamera({
           backgroundColor: 'rgba(0,0,0,0.34)',
         }}
       >
-        {/* gallery, in the corner — or the first shot, tap to retake it */}
+        {/* gallery, in the corner — the last shot shows here once there is one */}
         <Pressable
-          onPress={taken.length ? () => setTaken([]) : fromGallery}
+          onPress={pages.length ? () => setPages([]) : fromGallery}
+          onLongPress={fromGallery}
           hitSlop={12}
-          accessibilityLabel={taken.length ? 'Retake the ingredients photo' : 'Choose from your photos'}
+          accessibilityLabel={pages.length ? 'Start over' : 'Choose from your photos'}
           accessibilityRole="button"
           style={{
             width: 46,
@@ -196,13 +171,20 @@ export function PageCamera({
             justifyContent: 'center',
           }}
         >
-          {taken.length ? (
+          {pages.length ? (
             <>
-              <Image source={{ uri: taken[0].uri }} style={{ width: '100%', height: '100%' }} />
-              <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)' }} />
-              <Text style={{ position: 'absolute', color: '#fff', fontFamily: fonts.bold, fontSize: 9 }}>
-                RETAKE
-              </Text>
+              <Image source={{ uri: pages[pages.length - 1].uri }} style={{ width: '100%', height: '100%' }} />
+              <View
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  bottom: 0,
+                  paddingHorizontal: 4,
+                  backgroundColor: 'rgba(0,0,0,0.65)',
+                }}
+              >
+                <Text style={{ color: '#fff', fontFamily: fonts.bold, fontSize: 10 }}>{pages.length}</Text>
+              </View>
             </>
           ) : (
             <GalleryGlyph />
@@ -212,7 +194,7 @@ export function PageCamera({
         {/* shutter */}
         <Pressable
           onPress={shoot}
-          accessibilityLabel={`Photograph the ${step.title.toLowerCase()}`}
+          accessibilityLabel="Photograph the page"
           accessibilityRole="button"
           style={{
             width: 72,
@@ -222,49 +204,29 @@ export function PageCamera({
             borderColor: 'rgba(255,255,255,0.9)',
             alignItems: 'center',
             justifyContent: 'center',
-            opacity: ready && !busy ? 1 : 0.45,
+            opacity: ready && pages.length < MAX ? 1 : 0.45,
           }}
         >
           <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#fff' }} />
         </Pressable>
 
-        <View style={{ width: 46 }} />
-      </View>
-    </View>
-  );
-}
-
-/**
- * The frame. Everything outside it is dimmed so it is obvious what will be
- * read, and only the corners are drawn — a full rectangle competes with the
- * text you are trying to line up inside it.
- */
-function Guide() {
-  const { c } = useTheme();
-  const shade = 'rgba(0,0,0,0.45)';
-  const pct = (n: number) => `${n * 100}%` as const;
-
-  const corner = {
-    position: 'absolute' as const,
-    width: 26,
-    height: 26,
-    borderColor: c.nut,
-  };
-
-  return (
-    <View style={{ position: 'absolute', inset: 0 }} pointerEvents="none">
-      {/* dim outside the frame */}
-      <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: pct(GUIDE.y), backgroundColor: shade }} />
-      <View style={{ position: 'absolute', left: 0, right: 0, top: pct(GUIDE.y + GUIDE.h), bottom: 0, backgroundColor: shade }} />
-      <View style={{ position: 'absolute', left: 0, width: pct(GUIDE.x), top: pct(GUIDE.y), height: pct(GUIDE.h), backgroundColor: shade }} />
-      <View style={{ position: 'absolute', right: 0, width: pct(1 - GUIDE.x - GUIDE.w), top: pct(GUIDE.y), height: pct(GUIDE.h), backgroundColor: shade }} />
-
-      {/* corners */}
-      <View style={{ position: 'absolute', left: pct(GUIDE.x), top: pct(GUIDE.y), width: pct(GUIDE.w), height: pct(GUIDE.h) }}>
-        <View style={{ ...corner, top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3 }} />
-        <View style={{ ...corner, top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3 }} />
-        <View style={{ ...corner, bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3 }} />
-        <View style={{ ...corner, bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3 }} />
+        <Pressable
+          onPress={() => pages.length && onDone(pages)}
+          hitSlop={12}
+          accessibilityLabel="Read these pages"
+          accessibilityRole="button"
+          style={{ width: 46, alignItems: 'flex-end' }}
+        >
+          <Text
+            style={{
+              fontFamily: fonts.bold,
+              fontSize: 15,
+              color: pages.length ? c.nut : 'rgba(255,255,255,0.35)',
+            }}
+          >
+            {pages.length ? 'Read' : ''}
+          </Text>
+        </Pressable>
       </View>
     </View>
   );

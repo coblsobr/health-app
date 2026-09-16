@@ -64,52 +64,32 @@ top-left. It does **not** hand off to the system camera app, and there is no
 intermediate form asking again what you already chose. `takePictureAsync` must
 wait for `onCameraReady` — called earlier it returns a blank frame on Android.
 
-**Two framed shots, not one page.** Shot 1 is the ingredients, shot 2 the
-directions, each fitted inside a guide rectangle the way a bank frames a
-cheque. This is the important design decision in the whole scan path: reading
-a full page and working out which lines are ingredients and which are method
-is the least reliable thing the app does, and on-device OCR is nowhere near
-good enough for it. Framing tells the parser what it is looking at.
+**One photo of the whole page.** Shoot the page, up to four for a spread, and
+`parseRecipeText` decides what is an ingredient and what is a step. Framing the
+two halves as separate captures was tried and reverted: the text comes off the
+page fine, so making the user do the parser's job by hand, twice, for every
+recipe was solving the wrong problem. `components/CropFrame.tsx` and the
+region-filter machinery are gone — `git log` has them if the idea comes back.
 
-- `GUIDE` in `lib/ocr.ts` is shared by the overlay and the region filter, so
-  the rectangle drawn and the rectangle filtered against cannot drift apart.
-- ML Kit returns a `frame` per line, so filtering to the guide is arithmetic —
-  no cropping library, no native module, ships over the air.
-- `linesInRegion` returns **null** rather than a short list when filtering
-  would leave almost nothing, and the caller falls back to the full text. The
-  preview and the capture do not always cover the same field of view, and a
-  silently dropped ingredient is far worse than a stray line you can see and
-  delete. The guide is also widened by `REGION_SLACK` for the same reason.
+**Splitting ingredients from directions is the open problem.** It is being
+fixed against a corpus, not by guessing:
+
+- The review screen has an **Export scan** button. It shares the raw ML Kit
+  output — every line with its position — plus what the parser made of it.
+  Uses React Native's own `Share`, so no native module and no new APK.
+- Tune only against exported scans. ML Kit's line breaks, misreads and column
+  order are the real input; a transcription read by eye is not, and tuning
+  against one fixes problems the phone does not have.
+- **Line positions are the strongest unused signal.** Ingredients usually sit
+  in their own column or block; the current parser flattens to plain lines and
+  throws that away. `ScanPage` carries the geometry for exactly this.
 - Ingredients use `mergeIngredientWraps`, **not** `mergeWrappedLines`. The
   prose version joins any lowercase line to a previous line lacking end
-  punctuation — correct for method, catastrophic for a list, where it merges
+  punctuation — right for method, catastrophic for a list, where it merges
   "1 onion, diced" with "salt and pepper" and loses the salt. Only an explicit
   dangling ending (a comma, or a word like "into"/"with") counts as a wrap.
-- The recipe **name** is deliberately left blank: the frame is around the list,
-  not the title. A visible blank the user fills in beats a confident wrong guess.
-
-**Gallery photos are framed too**, with `components/CropFrame.tsx` — drag a
-rectangle over the photo instead of through a viewfinder. One photo carrying
-both halves gets two rectangles drawn on it; two photos get one each. The
-rectangle becomes the shot's `region`, so a crop and a camera guide are the
-same thing to the parser and nothing is cropped in the image sense.
-
-- A `Shot` without a `region` is read **whole**. That is the honest fallback
-  for a photo nobody framed, and it is what "Use the whole photo" does.
-- `linesInRegion` widens the camera's `GUIDE` by `REGION_SLACK` but a dragged
-  rectangle by almost nothing: the preview and the capture can disagree about
-  the field of view, whereas a dragged rectangle is exactly where the user put
-  it, and widening it would pull back the lines they meant to exclude.
-- `CropFrame` reads live state through refs inside its PanResponder handlers.
-  The handlers are created once, so closing over the first render's state
-  freezes the rectangle after a single drag.
-- Testing drag on the web preview needs **touch** events, not mouse events —
-  the mobile viewport puts react-native-web in touch mode and synthetic
-  MouseEvents are never translated. That is why a drag looks like it does
-  nothing when you simulate it wrong; check with touch before assuming a bug.
-
-Nutrition, Fitness and Health still exist and still work; they are reachable
-from the drawer and are not being developed. Do not restyle them.
+- The recipe **name** is often missed; the review form is where it gets typed.
+  A visible blank beats a confident wrong guess.
 
 ## Two worlds, two design languages
 

@@ -1,53 +1,40 @@
 import { useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, Share } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { RecipeForm } from '../../components/RecipeForm';
 import { PageCamera } from '../../components/PageCamera';
-import { CropFrame } from '../../components/CropFrame';
 import { Toast, B } from '../../components/ui';
-import { importFromSections, type OcrRecipe, type Region, type Shot } from '../../lib/ocr';
+import { importFromPages, type OcrRecipe, type ScanPage, type Shot } from '../../lib/ocr';
 import { saveRecipe, type RecipeInput } from '../../lib/db';
 import { useTheme } from '../../theme/ThemeProvider';
 
 /**
- * Scan a recipe: one framed photo of the ingredients, one of the directions.
+ * Scan a recipe: photograph the page, read the whole thing, parse it.
  *
  * Opens straight into the viewfinder rather than a form with a Camera button
- * on it — choosing Camera has already said what you want to do. The two shots
- * are framed separately so the parser is told which half is which instead of
- * having to work it out from a whole page, which on-device OCR does badly.
+ * on it — choosing Camera has already said what you want to do.
  */
-type Photo = { uri: string; width: number; height: number };
-
-const CROP_STEPS = [
-  { title: 'Ingredients', hint: 'Drag the frame around the ingredients list.' },
-  { title: 'Directions', hint: 'Now drag it around the method.' },
-];
-
 export default function ScanRecipe() {
   const { c, fonts } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const [pages, setPages] = useState<string[]>([]);
-  /**
-   * Gallery photos waiting to be framed. One photo means both halves are on
-   * it and you draw two rectangles on the same image; two photos means one
-   * each. `cropped` holds the shots confirmed so far.
-   */
-  const [picked, setPicked] = useState<Photo[] | null>(null);
-  const [cropped, setCropped] = useState<Shot[]>([]);
+  const [pages, setPages] = useState<Shot[]>([]);
+  const [scan, setScan] = useState<ScanPage[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<OcrRecipe | null>(null);
+  const [shared, setShared] = useState(false);
 
-  async function read(shots: { ingredients: Shot; steps: Shot }) {
-    setPages([shots.ingredients.uri, shots.steps.uri]);
+  async function read(shots: Shot[]) {
+    setPages(shots);
     setBusy(true);
     setError(null);
     try {
-      setResult(await importFromSections(shots));
+      const out = await importFromPages(shots);
+      setScan(out.pages);
+      setResult(out);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not read those photos.');
     } finally {
@@ -55,25 +42,50 @@ export default function ScanRecipe() {
     }
   }
 
-  /** One rectangle confirmed. Two of them and we can read. */
-  function addCrop(region: Region | null) {
-    if (!picked) return;
-    const step = cropped.length; // 0 = ingredients, 1 = directions
-    // One photo carries both halves; two photos carry one each.
-    const photo = picked[Math.min(step, picked.length - 1)];
-    const next = [...cropped, { ...photo, region: region ?? undefined }];
-    if (next.length < 2) {
-      setCropped(next);
-      return;
+  /**
+   * Hand the raw OCR out of the phone so a scan can become a test case.
+   *
+   * What ML Kit actually returned is the only honest input to tune the parser
+   * against — its line breaks, its misreads, the order it stitches columns in.
+   * Positions go too: which column a line sits in is the strongest signal for
+   * telling ingredients from method, and the parser currently ignores it.
+   *
+   * Uses the platform share sheet, which is part of React Native itself, so
+   * this needed no new native module and shipped over the air.
+   */
+  async function exportScan() {
+    try {
+      await Share.share({
+        message: JSON.stringify({
+          kind: 'health-app-scan',
+          at: new Date().toISOString(),
+          pages: scan,
+          parsed: {
+            name: result?.name ?? null,
+            servings: result?.servings ?? null,
+            prepMin: result?.prepMin ?? null,
+            cookMin: result?.cookMin ?? null,
+            ingredients: result?.ingredients ?? [],
+            steps: result?.steps ?? [],
+          },
+        }),
+      });
+      setShared(true);
+    } catch {
+      // Dismissing the share sheet is not an error worth a screen.
     }
-    setPicked(null);
-    setCropped([]);
-    read({ ingredients: next[0], steps: next[1] });
   }
 
   async function save(input: RecipeInput) {
     const id = await saveRecipe(input);
     router.replace(`/recipe/${id}`);
+  }
+
+  function restart() {
+    setResult(null);
+    setPages([]);
+    setScan([]);
+    setShared(false);
   }
 
   /* ── reading ── */
@@ -82,7 +94,7 @@ export default function ScanRecipe() {
       <View style={{ flex: 1, backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center', gap: 14 }}>
         <ActivityIndicator color={c.nut} />
         <Text style={{ fontFamily: fonts.body, fontSize: 14, color: c.inkSoft }}>
-          Reading the ingredients and directions…
+          Reading {pages.length === 1 ? 'the page' : `${pages.length} pages`}…
         </Text>
       </View>
     );
@@ -104,7 +116,7 @@ export default function ScanRecipe() {
           {error}
         </Text>
         <Pressable
-          onPress={() => { setError(null); setPages([]); }}
+          onPress={() => { setError(null); restart(); }}
           style={{ marginTop: 20, backgroundColor: c.nut, borderRadius: 8, paddingVertical: 13, paddingHorizontal: 28 }}
         >
           <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: '#fff' }}>Try again</Text>
@@ -120,11 +132,38 @@ export default function ScanRecipe() {
   if (result) {
     return (
       <View style={{ flex: 1, backgroundColor: c.surface, paddingTop: insets.top }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 10 }}>
-          <Pressable onPress={() => { setResult(null); setPages([]); }} hitSlop={12}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 15,
+            paddingVertical: 10,
+            gap: 12,
+          }}
+        >
+          <Pressable onPress={restart} hitSlop={12}>
             <Text style={{ fontSize: 22, color: c.ink }}>‹</Text>
           </Pressable>
-          <Text style={{ fontFamily: fonts.display, fontSize: 19, color: c.ink, marginLeft: 12 }}>Review scan</Text>
+          <Text style={{ fontFamily: fonts.display, fontSize: 19, color: c.ink, flex: 1 }}>Review scan</Text>
+
+          {/* Sending the raw OCR out is how a bad scan becomes a fix. */}
+          <Pressable
+            onPress={exportScan}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Export the scan data"
+            style={{
+              borderWidth: 1,
+              borderColor: shared ? c.line : c.nut,
+              borderRadius: 7,
+              paddingVertical: 6,
+              paddingHorizontal: 11,
+            }}
+          >
+            <Text style={{ fontFamily: fonts.semi, fontSize: 12, color: shared ? c.inkFaint : c.nut }}>
+              {shared ? 'Sent' : 'Export scan'}
+            </Text>
+          </Pressable>
         </View>
 
         <View style={{ paddingHorizontal: 14 }}>
@@ -149,7 +188,7 @@ export default function ScanRecipe() {
             prepMin: result.prepMin,
             cookMin: result.cookMin,
             sourceUrl: null,
-            photoUri: pages[0] ?? null,
+            photoUri: pages[0]?.uri ?? null,
             notes: result.notes,
             rating: null,
             ingredients: result.ingredients.map((text) => ({ text, isPrimary: false })),
@@ -158,42 +197,12 @@ export default function ScanRecipe() {
           }}
           submitLabel="Save to library"
           onSubmit={save}
-          onCancel={() => { setResult(null); setPages([]); }}
+          onCancel={restart}
         />
       </View>
     );
   }
 
-  /* ── framing a gallery photo ── */
-  if (picked) {
-    const step = CROP_STEPS[cropped.length];
-    const photo = picked[Math.min(cropped.length, picked.length - 1)];
-    return (
-      <CropFrame
-        // Remount per step so the rectangle resets rather than keeping the
-        // one just confirmed for the other half of the page.
-        key={`${photo.uri}-${cropped.length}`}
-        uri={photo.uri}
-        width={photo.width}
-        height={photo.height}
-        title={step.title}
-        hint={step.hint}
-        onDone={addCrop}
-        onSkip={() => addCrop(null)}
-        onBack={() => {
-          if (cropped.length) setCropped(cropped.slice(0, -1));
-          else setPicked(null);
-        }}
-      />
-    );
-  }
-
   /* ── the camera ── */
-  return (
-    <PageCamera
-      onDone={read}
-      onPicked={(photos) => { setCropped([]); setPicked(photos); }}
-      onCancel={() => router.back()}
-    />
-  );
+  return <PageCamera onDone={read} onCancel={() => router.back()} />;
 }
