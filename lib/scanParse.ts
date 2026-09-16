@@ -3,21 +3,20 @@ import type { ScanLine, ScanPage } from './ocr';
 /**
  * Turn a photographed cookbook page into a recipe, using where the text sat.
  *
- * The text-only parser guessed the ingredients/method split from wording, and
- * got it wrong on every real page: it read prose as ingredients, kept only the
- * first line of each step, and dropped every ingredient whose name wrapped to
- * a second line. The page itself answers all of that — cookbook pages are laid
- * out in two columns, and a column boundary is unambiguous where a heuristic
- * about word shape is not.
+ * Guessing the ingredients/method split from wording failed on every real
+ * page: it read prose as ingredients, kept only the first line of each step,
+ * and dropped every ingredient whose name wrapped. The layout answers all of
+ * it, and a page comes in one of two shapes:
  *
- * Signals used, in order of how much they are trusted:
- *   1. **Columns.** A vertical gap no line crosses splits ingredients from
- *      method. Nothing about the wording is as reliable.
- *   2. **Line starts.** An ingredient begins with a quantity or a head word
- *      ("Pinch of", "Kosher salt"); anything else continues the line above.
- *   3. **Vertical gaps.** A bigger-than-usual gap between lines ends a
- *      paragraph, which is how unnumbered method splits into steps.
- *   4. **Type size.** The biggest text near the top of the page is the title.
+ *   - **Side by side** — ingredients in a narrow left column, method in a
+ *     narrow right column.
+ *   - **Stacked** — ingredients at the top, sometimes in two sub-columns, with
+ *     the method full-width underneath.
+ *
+ * Telling them apart is what everything else hangs off, and the reliable test
+ * is **how wide a numbered step is**: a step on a side-by-side page is one
+ * column wide (~40% of the page), a stacked one spans it (~65%+). Column
+ * counts and vertical extents both give the wrong answer on real pages.
  */
 
 export type ScanRecipe = {
@@ -34,36 +33,43 @@ export type ScanRecipe = {
 const UNITS =
   /^(cups?|tbsps?|tablespoons?|tsps?|teaspoons?|grams?|g|kg|kilograms?|ml|millilitres?|milliliters?|l|litres?|liters?|oz|ounces?|lbs?|pounds?|cloves?|pinch(es)?|dash(es)?|cans?|tins?|packets?|packages?|pkg|slices?|sticks?|bunch(es)?|handfuls?|sprigs?|pieces?|sheets?|bulbs?|quarts?|pints?|stalks?|heads?|strips?|blocks?)$/i;
 
-/**
- * A quantity as OCR actually renders one.
- *
- * Scanned fraction glyphs come back as stray letters — ½ reads as "a" or "V½",
- * ¼ as "/4" or "V4", ⅓ as "s", 1 as "l" or "I". Requiring a clean digit here
- * dropped a third of every ingredient list, so a lone letter counts as a
- * quantity when a unit follows it.
- */
+/** Units in the singular — "4 teaspoon" is not English, so the 4 is a ¼. */
+const SINGULAR_UNIT = /^(teaspoon|tablespoon|cup|pound|ounce|stick|clove|can|quart|pint)$/i;
+
 const QTY = /^[\d¼½¾⅓⅔⅛⅜⅝⅞/]/;
 /** A bare letter standing in for a fraction: "a teaspoon", "Va cup", "A cup". */
 const LETTER_QTY = /^[A-Za-z]{1,2}$/;
 /** Something numeric buried in the token: "V½", "V4", "1½". */
 const HAS_NUMERAL = /[\d¼½¾⅓⅔⅛⅜⅝⅞]/;
 
-/** Words that open an ingredient which has no quantity at all. */
+/** Words that open an ingredient which carries no quantity at all. */
 const HEAD_WORD =
-  /^(pinch|dash|handful|kosher|sea|salt|freshly|leaves|zest|juice|few|several|some|a few|good|large|small|medium)\b/i;
+  /^(pinch|dash|handful|kosher|sea|salt|freshly|leaves|zest|juice|few|several|some|good|large|small|medium|chopped|toasted|black|white|ground|fresh|grated|shredded|minced|crushed|cooked|additional|prepared|cream)\b/i;
 
 /** A line ending mid-phrase, so the next line continues it whatever it is. */
 const WRAP_TAIL =
-  /(?:,|-|\b(?:into|with|and|or|of|for|plus|to|about|such as|cut|torn|roughly|finely|thinly|each)\s*)$/i;
+  /(?:,|-|\b(?:into|with|and|or|of|for|plus|to|about|such as|cut|torn|roughly|finely|thinly|each|condensed|ground|freshly)\s*)$/i;
 
 /** Openers that always continue the line above, never start an ingredient. */
 const CONTINUES =
-  /^(or|and|as|of|to|such as|plus|about|opposite|have|from|very|cleaned|drained|finely|roughly|thinly|cut|mixed|\()|^\(/i;
+  /^(or|and|as|of|to|such as|plus|about|opposite|have|from|very|cleaned|drained|finely|roughly|thinly|cut|mixed)\b|^\(/i;
 
-const STEP_NUMBER = /^\(?(\d{1,2})[.,):]\s+\S/;
+/**
+ * A sub-heading inside an ingredient list: "DRESSING", "SALAD", "CHOPPED
+ * TOMATOES". All caps, no digits, short. Without this, "CHOPPED TOMATOES"
+ * reads as an ingredient the moment "chopped" is allowed to open one.
+ */
+const HEADING = /^[A-Z][A-Z\s&'\-:,.]*$/;
+function isHeading(t: string): boolean {
+  return t.length < 30 && !/\d/.test(t) && HEADING.test(t);
+}
 
-/** Page furniture: folios, running heads, and the like. */
-const NOISE = /^(?:\d{1,4}|page \d+|chapter \d+|[.·•\-–—_=~|]{2,})$/i;
+/** Page furniture: folios, running heads, bare numbers. */
+const NOISE = /^(?:[\d\s]+|page \d+|chapter \d+|[.·•\-–—_=~|]{2,})$/i;
+
+/** A yield or timing line, which belongs to neither list. */
+const YIELD_OR_TIME =
+  /^(makes|serves|servings?|yields?|prep\s*time|cook\s*time|bake[^:]{0,14}time|total\s*time)\b/i;
 
 /* ── helpers ────────────────────────────────────────────────── */
 
@@ -82,40 +88,79 @@ function median(ns: number[]): number {
   return s[Math.floor(s.length / 2)];
 }
 
-/* ── columns ────────────────────────────────────────────────── */
+function byY(lines: ScanLine[]): ScanLine[] {
+  return [...lines].sort((a, b) => a.y - b.y || a.x - b.x);
+}
 
 /**
- * Split lines into columns at a vertical gap nothing crosses.
+ * Drop everything that is not this recipe.
  *
- * Full-width lines — the title, an intro paragraph — cross every gap, so they
- * are set aside first or they would hide the boundary entirely.
+ * A photo of a magazine catches the facing page down the left edge and the
+ * masthead across the top, and OCR reads both as confidently as the recipe.
+ * Every one of those fragments looked like an ingredient to the parser.
+ */
+export function cleanLines(lines: ScanLine[], pageW: number, pageH: number): ScanLine[] {
+  return lines.filter((l) => {
+    const t = tidy(l.t);
+    if (!t || t.length < 2 || NOISE.test(t)) return false;
+    if (isVertical(l)) return false;
+    // Bleed from the facing page, trapped in the left margin.
+    if (l.x + l.w < pageW * 0.15) return false;
+    // Trimmed off the top edge of the scan — a masthead or a barcode.
+    if (l.y < pageH * 0.01) return false;
+    // A folio or running head along the bottom.
+    if (l.y > pageH * 0.9 && l.w < pageW * 0.2) return false;
+    return true;
+  });
+}
+
+/* ── the two page shapes ────────────────────────────────────── */
+
+/**
+ * Does this line open a method step?
+ *
+ * The word after the number has to be capitalised and not a unit, or every
+ * "2 tablespoons Dijon" in the ingredient list would read as step 2.
+ */
+export function methodMarker(l: ScanLine): boolean {
+  const raw = l.t.trim();
+  if (/^[•·●]/.test(raw)) return true;
+  const m = raw.match(/^\(?(?:\d{1,2}|[Il])[.,):]?\s+(\S+)/);
+  if (!m) return false;
+  const next = m[1];
+  if (!/^[A-Z]/.test(next)) return false;
+  return !UNITS.test(next.replace(/[^A-Za-z]/g, ''));
+}
+
+function stripMarker(text: string): string {
+  return tidy(text.replace(/^\s*[•·●]\s*/, '').replace(/^\(?(?:\d{1,2}|[Il])[.,):]?\s+/, ''));
+}
+
+/**
+ * Split lines into columns at a gap between their left edges.
+ *
+ * Clustering left edges rather than looking for a gap in horizontal coverage:
+ * one line straddling the gutter closes a coverage gap completely and hides
+ * the boundary.
  */
 export function splitColumns(lines: ScanLine[], pageW: number): {
   full: ScanLine[];
   columns: ScanLine[][];
 } {
-  const body = lines.filter((l) => !isVertical(l) && !NOISE.test(tidy(l.t)) && tidy(l.t).length > 1);
-  if (body.length < 6) return { full: body, columns: [] };
+  if (lines.length < 6) return { full: lines, columns: [] };
 
-  // Full-width means wide relative to the PAGE. Measuring against the widest
-  // line instead classified ordinary method lines as full-width — they are the
-  // widest thing on a page whose only real full-width text is the title.
-  const full = body.filter((l) => l.w > pageW * 0.6);
-  const rest = body.filter((l) => l.w <= pageW * 0.6);
-  if (rest.length < 6) return { full: body, columns: [] };
+  // Full-width means wide relative to the PAGE, never to the widest line:
+  // measured against the widest line, ordinary method lines count as
+  // full-width and vanish from both columns.
+  const full = lines.filter((l) => l.w > pageW * 0.6);
+  const rest = lines.filter((l) => l.w <= pageW * 0.6);
+  if (rest.length < 6) return { full: lines, columns: [] };
 
-  // Cluster on left edges, not on a gap in horizontal coverage: one line
-  // straddling the gutter — a sentence that runs long, a stray caption — closes
-  // a coverage gap completely and hides the boundary. Left edges stay in two
-  // tight clusters regardless.
   const xs = [...new Set(rest.map((l) => l.x))].sort((a, b) => a - b);
-
-  type Candidate = { mid: number; width: number };
-  const candidates: Candidate[] = [];
+  const candidates: { mid: number; width: number }[] = [];
   for (let i = 1; i < xs.length; i++) {
-    const gap = xs[i] - xs[i - 1];
     const mid = (xs[i] + xs[i - 1]) / 2;
-    if (mid > pageW * 0.25 && mid < pageW * 0.75) candidates.push({ mid, width: gap });
+    if (mid > pageW * 0.25 && mid < pageW * 0.75) candidates.push({ mid, width: xs[i] - xs[i - 1] });
   }
   candidates.sort((a, b) => b.width - a.width);
 
@@ -124,22 +169,13 @@ export function splitColumns(lines: ScanLine[], pageW: number): {
     if (cand.width < pageW * 0.02) break;
     const left = rest.filter((l) => l.x < cand.mid);
     const right = rest.filter((l) => l.x >= cand.mid);
-    // A margin folio sitting far to the right is a bigger gap than the gutter,
-    // so a split is only believed when both sides hold a real body of text.
-    if (left.length >= floor && right.length >= floor) {
-      return { full, columns: [left, right] };
-    }
+    // A folio alone in the right margin is a bigger gap than the gutter, so a
+    // split is believed only when both sides hold a real body of text.
+    if (left.length >= floor && right.length >= floor) return { full, columns: [left, right] };
   }
 
   return { full, columns: [rest] };
 }
-
-/** Reading order within a column. */
-function byY(lines: ScanLine[]): ScanLine[] {
-  return [...lines].sort((a, b) => a.y - b.y || a.x - b.x);
-}
-
-/* ── which column is which ──────────────────────────────────── */
 
 /** How much a column reads like an ingredient list rather than method. */
 export function ingredientScore(lines: ScanLine[]): number {
@@ -153,37 +189,67 @@ export function ingredientScore(lines: ScanLine[]): number {
     if (UNITS.test(second)) score += 2;
     if (LETTER_QTY.test(first) && UNITS.test(second)) score += 2;
     if (t.length < 40) score += 0.5;
-    // Method gives itself away: numbered, long, and written in sentences.
-    if (STEP_NUMBER.test(t)) score -= 4;
+    if (methodMarker(l)) score -= 4;
     if (t.length > 60) score -= 1.5;
     if (/[.!?]$/.test(t) && t.split(/\s+/).length > 8) score -= 1;
   }
   return score / lines.length;
 }
 
-/* ── ingredients ────────────────────────────────────────────── */
+/* ── quantities ─────────────────────────────────────────────── */
+
+const FRACTION_FOR: Record<string, string> = { '2': '½', '3': '⅓', '4': '¼', '8': '⅛' };
 
 /**
- * Group an ingredient column into one entry per ingredient.
+ * Put back the fraction OCR could not read.
  *
- * A cookbook hangs the quantity in the margin and indents what wraps, so most
- * lines that start a new ingredient begin with a quantity. Indentation alone
- * is not enough — some books indent barely at all — so the decision is made on
- * the wording, with the line above given a veto when it ends mid-phrase.
+ * Scanned fraction glyphs come back as letters — ¼ as "Va", "VA", "Ya" or a
+ * bare "4"; ½ as "a"; ⅓ as "s"; 1 as "l" or "I". "Ya cup olive oil" is not
+ * something anyone can cook from.
+ *
+ * The bare-digit case leans on grammar rather than on shape: "4 teaspoon" is
+ * not English, so the 4 is a ¼, while "4 teaspoons" is a real quantity and is
+ * left alone. That distinction is what makes the rule safe to apply.
  */
+export function normalizeQuantity(text: string): string {
+  const words = text.split(/\s+/);
+  if (words.length < 2) return text;
+  const first = words[0];
+  const unit = words[1].replace(/[^A-Za-z]/g, '');
+  const singular = SINGULAR_UNIT.test(unit);
+
+  let replacement: string | null = null;
+  if (/^(V4|Va|VA|Ya|YA|1\/4|\/4)$/.test(first)) replacement = '¼';
+  else if (/^(V2|1\/2|\/2)$/.test(first)) replacement = '½';
+  else if (/^(V3|1\/3|Ye|Ys)$/.test(first)) replacement = '⅓';
+  else if (first === 'a' && singular) replacement = '½';
+  else if (first === 'A' && singular) replacement = '¼';
+  else if (first === 's' && singular) replacement = '⅓';
+  else if (/^[lI]$/.test(first) && singular) replacement = '1';
+  else if (/^[2348]$/.test(first) && singular) replacement = FRACTION_FOR[first];
+
+  if (!replacement) return text;
+  words[0] = replacement;
+  return words.join(' ');
+}
+
+/* ── ingredients ────────────────────────────────────────────── */
+
 export function startsIngredient(text: string): boolean {
   const t = tidy(text);
   const words = t.split(/\s+/);
   const first = words[0] ?? '';
   const second = words[1] ?? '';
   if (CONTINUES.test(t)) return false;
+  if (isHeading(t)) return false;
   return (
-    // A clean quantity, or "/4" where the slash survived and the 1 did not.
     QTY.test(first) ||
-    // "V½ medium onion" — a glyph inside the token, so any word may follow.
+    // OCR leaves a bare "%" or "?%" where it could not read a fraction glyph.
+    // It is still sitting in the quantity slot, so the line still starts one.
+    (first.includes('%') && first.length <= 3) ||
     (HAS_NUMERAL.test(first) && first.length <= 4 && /^[A-Za-z]/.test(second)) ||
-    // "Va teaspoon", "A cup" — a lone letter only counts when a unit follows,
-    // or "as grapeseed, canola," would start an ingredient of its own.
+    // A lone letter only counts when a unit follows, or "as grapeseed, canola,"
+    // would start an ingredient of its own.
     (LETTER_QTY.test(first) && UNITS.test(second)) ||
     HEAD_WORD.test(t)
   );
@@ -204,21 +270,24 @@ export function groupIngredients(lines: ScanLine[]): string[] {
     const t = tidy(line.t);
     if (!t || NOISE.test(t)) continue;
 
-    // A starred footnote runs to the end of the column; none of it is an
-    // ingredient, and "is a blend of cinnamon," reads exactly like one.
-    if (/^\*/.test(line.t.trim()) || /^\*/.test(t)) footnote = true;
+    // A starred footnote runs to the end of the column and reads exactly like
+    // ingredients — "is a blend of cinnamon,".
+    if (/^\*/.test(line.t.trim())) footnote = true;
     if (footnote) continue;
+    if (YIELD_OR_TIME.test(t) && t.length < 44) continue;
+    // A sub-heading is not an item, and must not start the list either.
+    if (isHeading(t)) continue;
 
     const prev = out[out.length - 1];
     const starts = startsIngredient(t);
 
-    // A heading, or a scrap of the intro that wrapped into this column, sits
-    // above the list. Nothing counts until the first real item.
+    // A heading, or a scrap of intro that wrapped into this column, sits above
+    // the list. Nothing counts until the first real item.
     if (!started && !starts) continue;
     started = true;
 
-    // The line above wins if it was left hanging: "drained, and sliced into"
-    // is followed by "4 patty-size pieces", which starts with a digit and is
+    // The line above wins when it was left hanging: "drained, and sliced into"
+    // is followed by "4 patty-size pieces", which begins with a digit and is
     // still the same ingredient.
     if (prev && WRAP_TAIL.test(prev)) {
       out[out.length - 1] = prev.replace(/-$/, '') + (prev.endsWith('-') ? '' : ' ') + t;
@@ -229,74 +298,91 @@ export function groupIngredients(lines: ScanLine[]): string[] {
     else out[out.length - 1] = prev + ' ' + t;
   }
 
-  return out.filter((l) => l.length > 1);
+  return out.map(normalizeQuantity).filter((l) => l.length > 1);
 }
 
 /* ── steps ──────────────────────────────────────────────────── */
 
-/**
- * Group a method column into steps.
- *
- * Numbered method splits on its numbers. Unnumbered method splits on the gap
- * between paragraphs — a page leaves more space between two steps than between
- * two lines of the same step, and that is the only thing distinguishing them.
- */
+/** Break a run-on block into readable steps at sentence ends. */
+function splitSentences(text: string): string[] {
+  const sentences = text.match(/[^.!?]+[.!?]+(?:["')\]]+)?\s*/g) ?? [text];
+  const out: string[] = [];
+  for (const raw of sentences) {
+    const s = tidy(raw);
+    if (!s) continue;
+    const prev = out[out.length - 1];
+    if (prev && (prev.length < 170 || s.length < 40)) out[out.length - 1] = prev + ' ' + s;
+    else out.push(s);
+  }
+  return out;
+}
+
 export function groupSteps(lines: ScanLine[]): string[] {
   const ordered = byY(lines).filter((l) => {
     const t = tidy(l.t);
-    return t && !NOISE.test(t);
+    if (!t || NOISE.test(t)) return false;
+    // "MAKES 4 SERVINGS" and "PREP TIME: 15 MINUTES" sit inside the method
+    // block on magazine pages, but "Bake 35 to 40 minutes or until…" is a real
+    // step, so only a short line counts as a label.
+    return !(YIELD_OR_TIME.test(t) && t.length < 44);
   });
   if (!ordered.length) return [];
 
-  const numbered = ordered.some((l) => STEP_NUMBER.test(tidy(l.t)));
+  const marked = ordered.filter(methodMarker);
+  let steps: string[];
 
-  if (numbered) {
-    const steps: string[] = [];
+  if (marked.length >= 2) {
+    steps = [];
     for (const l of ordered) {
-      const t = tidy(l.t);
-      if (STEP_NUMBER.test(t)) steps.push(t.replace(/^\(?\d{1,2}[.,):]\s*/, ''));
-      else if (steps.length) steps[steps.length - 1] += ' ' + t;
+      if (methodMarker(l)) steps.push(stripMarker(l.t));
+      else if (steps.length) steps[steps.length - 1] += ' ' + tidy(l.t);
     }
-    return steps.map(tidy).filter((s) => s.length > 2);
+  } else {
+    // Unnumbered: a gap noticeably larger than the usual line spacing is a
+    // paragraph break, and a paragraph is a step. Paragraph leading is only
+    // slightly looser than line leading, so 1.45x never fired and ran five
+    // steps together.
+    const gaps: number[] = [];
+    for (let i = 1; i < ordered.length; i++) gaps.push(ordered[i].y - ordered[i - 1].y);
+    const typical = median(gaps.filter((g) => g > 0));
+    const breakAt = Math.max(typical * 1.22, typical + 10);
+
+    steps = [];
+    ordered.forEach((l, i) => {
+      const t = i === 0 ? stripMarker(l.t) : tidy(l.t);
+      const gap = i === 0 ? Infinity : l.y - ordered[i - 1].y;
+      if (i === 0 || gap > breakAt) steps.push(t);
+      else steps[steps.length - 1] += ' ' + t;
+    });
   }
 
-  // Unnumbered: a gap noticeably larger than the usual line spacing is a
-  // paragraph break, and a paragraph is a step.
-  const gaps: number[] = [];
-  for (let i = 1; i < ordered.length; i++) gaps.push(ordered[i].y - ordered[i - 1].y);
-  const typical = median(gaps.filter((g) => g > 0));
-  // Paragraph leading is only a little looser than line leading — 1.45x never
-  // fired and ran five steps together. The floor keeps noise from splitting a
-  // paragraph on a one-pixel wobble.
-  const breakAt = Math.max(typical * 1.22, typical + 10);
+  steps = steps.map(tidy).filter((s) => s.length > 2);
 
-  const steps: string[] = [];
-  ordered.forEach((l, i) => {
-    const t = tidy(l.t);
-    const gap = i === 0 ? Infinity : l.y - ordered[i - 1].y;
-    if (i === 0 || gap > breakAt) steps.push(t);
-    else steps[steps.length - 1] += ' ' + t;
-  });
-  return steps.map(tidy).filter((s) => s.length > 2);
+  // A magazine sets its paragraphs tight enough that there is no gap to find,
+  // so the whole method arrives as one block. Sentences are the next best cut.
+  if (steps.length === 1 && steps[0].length > 400) return splitSentences(steps[0]);
+  return steps;
 }
 
 /* ── title and yield ────────────────────────────────────────── */
 
-/** The biggest type near the top, plus anything sharing its line. */
 export function findTitle(lines: ScanLine[], pageH: number, pageW: number): string | null {
-  // Only the top of the page, and never a full-width line: an intro paragraph
-  // is set in text nearly as tall as the title and sits right under it, so
-  // height alone picks the blurb about half the time.
+  // Titles are short, wide enough to be type rather than a scrap, and near the
+  // top. Without the word limit an intro paragraph wins on height alone about
+  // half the time, since it is set nearly as tall and sits right underneath.
   const candidates = lines.filter(
-    (l) => !isVertical(l) && l.y < pageH * 0.25 && l.w <= pageW * 0.6 && tidy(l.t).length > 2
+    (l) =>
+      !isVertical(l) &&
+      l.y < pageH * 0.25 &&
+      l.w > pageW * 0.12 &&
+      tidy(l.t).length > 2 &&
+      tidy(l.t).split(/\s+/).length <= 8
   );
   if (!candidates.length) return null;
 
   const tallest = candidates.reduce((a, b) => (b.h > a.h ? b : a));
-  const typical = median(lines.map((l) => l.h));
-  if (tallest.h < typical * 1.3) return null;
+  if (tallest.h < median(lines.map((l) => l.h)) * 1.3) return null;
 
-  // A title broken into two OCR lines still overlaps vertically.
   const sameLine = candidates
     .filter((l) => l.y < tallest.y + tallest.h && l.y + l.h > tallest.y && l.h >= tallest.h * 0.55)
     .sort((a, b) => a.y - b.y || a.x - b.x);
@@ -307,13 +393,14 @@ export function findTitle(lines: ScanLine[], pageH: number, pageW: number): stri
 /**
  * Servings, read from a single line.
  *
- * The count has to sit on the same line as the word. A page that prints
- * "SERVES" down the margin above the folio "143" produced 143 servings when
- * the two were allowed to match across lines.
+ * The count has to sit on the same line as the word: a page printing "SERVES"
+ * down the margin above the folio "143" gave 143 servings when the two were
+ * allowed to match across lines. No word boundary after the keyword, because
+ * OCR runs them together — "MAKES6 SERVINGS".
  */
 export function findServings(lines: ScanLine[]): number | null {
   for (const l of lines) {
-    const m = tidy(l.t).match(/\b(?:serves|makes|yields?)\b[^\d]{0,12}(\d{1,3})\b/i);
+    const m = tidy(l.t).match(/(?:serves?|servings?|makes|yields?)\D{0,10}(\d{1,3})\b/i);
     if (m) {
       const n = parseInt(m[1], 10);
       if (n >= 1 && n <= 60) return n;
@@ -326,61 +413,92 @@ export function findServings(lines: ScanLine[]): number | null {
 
 export function parseScanPage(page: ScanPage): ScanRecipe {
   const warnings: string[] = [];
-  const lines = page.lines ?? [];
-  if (!lines.length) {
-    return { name: null, ingredients: [], steps: [], servings: null, notes: null, warnings: ['No readable text in that photo.'] };
+  const raw = page.lines ?? [];
+  const pageW = page.w || 1;
+  const pageH = page.h || 1;
+
+  if (!raw.length) {
+    return {
+      name: null, ingredients: [], steps: [], servings: null, notes: null,
+      warnings: ['No readable text in that photo.'],
+    };
   }
 
-  const { full, columns } = splitColumns(lines, page.w || 1);
-  const title = findTitle([...full, ...columns.flat()], page.h || 1, page.w || 1);
+  const lines = cleanLines(raw, pageW, pageH);
+  const title = findTitle(lines, pageH, pageW);
+  // Read from the uncleaned lines: the yield is often set down the margin, and
+  // cleaning drops rotated text.
+  const servings = findServings(raw);
 
   // Whatever became the title must not also be read as an ingredient — it sits
-  // inside a column, and "Honey Ginger Ribs" is a plausible-looking first item.
-  const titleParts = new Set(
-    title ? title.split(/\s+/).filter((w) => w.length > 2) : []
-  );
+  // inside a column, and "Honey Ginger Ribs" is a plausible first item.
+  const titleWords = new Set(title ? title.split(/\s+/).filter((w) => w.length > 2) : []);
   const isTitleLine = (l: ScanLine) => {
-    if (!titleParts.size) return false;
+    if (!titleWords.size) return false;
     const words = tidy(l.t).split(/\s+/).filter((w) => w.length > 2);
-    if (!words.length) return false;
-    return words.every((w) => titleParts.has(w));
+    return words.length > 0 && words.every((w) => titleWords.has(w));
   };
-  const strip = (ls: ScanLine[]) => ls.filter((l) => !isTitleLine(l));
+  const body = lines.filter((l) => !isTitleLine(l));
 
   let ingredients: string[] = [];
   let steps: string[] = [];
 
-  if (columns.length >= 2) {
-    const scored = columns.map((c) => ({ c: strip(c), score: ingredientScore(c) }));
-    scored.sort((a, b) => b.score - a.score);
-    ingredients = groupIngredients(scored[0].c);
+  const markers = body.filter(methodMarker);
+  const stacked = markers.length > 0 && median(markers.map((m) => m.w)) > pageW * 0.5;
 
-    // Anything in the method column sitting above where the ingredients begin
-    // is the tail of the intro, not a step. One line of blurb wrapping into
-    // the right-hand column otherwise becomes step 1.
-    const top = ingredientsTop(scored[0].c);
-    const lead = median(lines.map((l) => l.h)) * 1.5;
-    const methodLines = scored
-      .slice(1)
-      .flatMap((s) => s.c)
-      .filter((l) => top == null || l.y >= top - lead);
-    steps = groupSteps(methodLines);
-  } else if (columns.length === 1) {
-    // One column: fall back to shape, since there is no boundary to trust.
-    const col = byY(strip(columns[0]));
-    const ing = col.filter((l) => ingredientScore([l]) > 0);
-    const rest = col.filter((l) => ingredientScore([l]) <= 0);
-    ingredients = groupIngredients(ing);
-    steps = groupSteps(rest);
-    warnings.push('Only one column of text — the split between ingredients and method is a guess.');
+  if (stacked) {
+    const methodTop = Math.min(...markers.map((m) => m.y));
+    const above = body.filter((l) => l.y < methodTop);
+    const below = body.filter((l) => l.y >= methodTop);
+
+    const { columns } = splitColumns(above, pageW);
+    if (columns.length >= 2) {
+      // Two sub-lists side by side ("DRESSING" then "SALAD") — read them in
+      // page order, left column first.
+      const ordered = [...columns].sort(
+        (a, b) => Math.min(...a.map((l) => l.x)) - Math.min(...b.map((l) => l.x))
+      );
+      ingredients = ordered.flatMap(groupIngredients);
+    } else {
+      // Not `columns[0]`: splitColumns holds full-width lines back, and on a
+      // stacked page a full-width line is usually just a long ingredient.
+      ingredients = groupIngredients(above);
+    }
+    steps = groupSteps(below);
   } else {
-    warnings.push('Could not make out the layout of that page.');
+    const { columns } = splitColumns(body, pageW);
+    if (columns.length >= 2) {
+      const scored = columns
+        .map((c) => ({ c, score: ingredientScore(c) }))
+        .sort((a, b) => b.score - a.score);
+      ingredients = groupIngredients(scored[0].c);
+
+      // Anything in the method column above where the ingredients begin is the
+      // tail of the intro, not step 1.
+      const top = ingredientsTop(scored[0].c);
+      const lead = median(lines.map((l) => l.h)) * 1.5;
+      steps = groupSteps(
+        scored.slice(1).flatMap((s) => s.c).filter((l) => top == null || l.y >= top - lead)
+      );
+    } else if (columns.length === 1) {
+      const col = byY(columns[0]);
+      ingredients = groupIngredients(col.filter((l) => ingredientScore([l]) > 0));
+      steps = groupSteps(col.filter((l) => ingredientScore([l]) <= 0));
+      warnings.push('Only one column of text — the split between ingredients and method is a guess.');
+    } else {
+      warnings.push('Could not make out the layout of that page.');
+    }
   }
 
-  const servings = findServings(lines);
-
-  if (!ingredients.length) warnings.push('No ingredients found. If they are on the facing page, add that photo too.');
-  if (!steps.length) warnings.push('No method found. If it is on the facing page, add that photo too.');
+  if (ingredients.some((i) => i.includes('%'))) {
+    warnings.push('Some fractions were unreadable — check the quantities.');
+  }
+  if (!ingredients.length) {
+    warnings.push('No ingredients found. If they are on the facing page, add that photo too.');
+  }
+  if (!steps.length) {
+    warnings.push('No method found. If it is on the facing page, add that photo too.');
+  }
 
   return { name: title, ingredients, steps, servings, notes: null, warnings };
 }

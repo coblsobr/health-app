@@ -74,8 +74,18 @@ region-filter machinery are gone — `git log` has them if the idea comes back.
 **Splitting ingredients from directions is done by LAYOUT, not by wording.**
 `lib/scanParse.ts`, tested against real ML Kit output in `fixtures/scans/`.
 
-A cookbook page is two columns — ingredients left, method right — and the
-column boundary answers the split outright. Guessing from wording never worked:
+A cookbook page comes in one of two shapes, and telling them apart is what
+everything hangs off:
+
+- **Side by side** — ingredients in a narrow left column, method right.
+- **Stacked** — ingredients on top (sometimes in two sub-columns), method
+  full-width below.
+
+**The test is how wide a numbered step is**: one column wide (~40% of the page)
+means side-by-side, spanning the page (~65%+) means stacked. Column counts and
+vertical extents both give the wrong answer on real pages — a stacked page
+still clusters into two columns, because the method lines share a left edge
+with the first ingredient column. Guessing from wording never worked:
 it read prose as ingredients, kept only the first line of every step, and lost
 every ingredient whose name wrapped. Run `node --experimental-strip-types
 scan.test.mts` after touching any of it; all 45 assertions come from real pages.
@@ -103,6 +113,15 @@ Signals, in order of how much they are trusted:
    becomes the title is then excluded from the column, or it reads as the first
    ingredient.
 
+**Fractions are reconstructed, and the grammar rule is what makes it safe.**
+OCR renders ¼ as "Va"/"VA"/"Ya"/"V4"/"/4" or a bare "4", ½ as "a", ⅓ as "s",
+1 as "l"/"I". `normalizeQuantity` puts the glyph back. The bare-digit case
+leans on grammar, not shape: **"4 teaspoon" is not English, so the 4 is a ¼,
+while "4 teaspoons" is a real quantity and is left alone.** Singular versus
+plural is the whole rule. A bare "%" is OCR giving up on a glyph — it still
+occupies the quantity slot, so the line still starts an ingredient, and the
+page gets a warning telling you to check the quantities.
+
 **OCR renders fractions as letters** — ½ as "a" or "V½", ¼ as "Va"/"V4"/"/4",
 ⅓ as "s", 1 as "l" or "I". A lone letter counts as a quantity **only when a
 unit follows** ("Va teaspoon", "A cup"); allow any following word and "as
@@ -110,6 +129,18 @@ grapeseed, canola," becomes an ingredient of its own. Requiring a clean digit
 merged three ingredients into one on a real page.
 
 Other things the fixtures caught:
+- **A magazine photo catches the facing page** down the left margin and the
+  masthead across the top, and OCR reads both confidently. `cleanLines` drops
+  anything wholly inside the left 15%, above the top 1%, or small along the
+  bottom 10%.
+- **All-caps sub-headings** ("DRESSING", "SALAD", "CHOPPED TOMATOES") are not
+  ingredients — necessary the moment "chopped" is allowed to open one.
+- **Do not put "sliced" in `WRAP_TAIL`.** It merges "1 bulb fennel, thinly
+  sliced" into the next ingredient, and the line after it is a continuation
+  anyway. "ground" and "freshly" *are* needed there, so "Kosher salt and
+  freshly ground" keeps "black pepper to taste".
+- **A magazine sets paragraphs too tight to find a gap**, so the method arrives
+  as one block; a single step over 400 chars is re-split on sentences.
 - A starred footnote runs to the end of the ingredient column and reads exactly
   like ingredients ("is a blend of cinnamon,"). Everything after a `*` is out.
 - Servings must match **on one line**. A page printing "SERVES" down the margin
