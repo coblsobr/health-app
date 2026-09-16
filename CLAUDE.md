@@ -71,31 +71,56 @@ page fine, so making the user do the parser's job by hand, twice, for every
 recipe was solving the wrong problem. `components/CropFrame.tsx` and the
 region-filter machinery are gone — `git log` has them if the idea comes back.
 
-**Splitting ingredients from directions is the open problem.** It is being
-fixed against a corpus, not by guessing:
+**Splitting ingredients from directions is done by LAYOUT, not by wording.**
+`lib/scanParse.ts`, tested against real ML Kit output in `fixtures/scans/`.
 
-- **Every scan saves itself** to the `scan_exports` table — raw ML Kit output,
-  every line with its position, plus what the parser made of it. The Recipes
-  screen then shows "N scans saved · Send them all" while any are waiting, and
-  one share sends the batch. Sharing each scan as it happened meant a share
-  sheet and an email per recipe, which is not a workflow anyone follows thirty
-  times. The line disappears once the batch is sent, so the screen goes back to
-  its three things. Uses React Native's own `Share` — no native module, no APK.
-- **Clear only on `Share.sharedAction`.** Dismissing the sheet must not destroy
-  the batch.
-- Tune only against exported scans. ML Kit's line breaks, misreads and column
-  order are the real input; a transcription read by eye is not, and tuning
-  against one fixes problems the phone does not have.
-- **Line positions are the strongest unused signal.** Ingredients usually sit
-  in their own column or block; the current parser flattens to plain lines and
-  throws that away. `ScanPage` carries the geometry for exactly this.
-- Ingredients use `mergeIngredientWraps`, **not** `mergeWrappedLines`. The
-  prose version joins any lowercase line to a previous line lacking end
-  punctuation — right for method, catastrophic for a list, where it merges
-  "1 onion, diced" with "salt and pepper" and loses the salt. Only an explicit
-  dangling ending (a comma, or a word like "into"/"with") counts as a wrap.
-- The recipe **name** is often missed; the review form is where it gets typed.
-  A visible blank beats a confident wrong guess.
+A cookbook page is two columns — ingredients left, method right — and the
+column boundary answers the split outright. Guessing from wording never worked:
+it read prose as ingredients, kept only the first line of every step, and lost
+every ingredient whose name wrapped. Run `node --experimental-strip-types
+scan.test.mts` after touching any of it; all 45 assertions come from real pages.
+
+Signals, in order of how much they are trusted:
+
+1. **Columns.** Cluster line **left edges** and split at the widest gap whose
+   midpoint is central. Do *not* look for a gap in horizontal coverage — one
+   line straddling the gutter closes it completely and hides the boundary. A
+   split is only believed when both sides hold a real body of text, or a folio
+   alone in the right margin becomes a "column".
+2. **Full-width is relative to the PAGE** (`w > pageW * 0.6`), never to the
+   widest line. Measured against the widest line, ordinary method lines get
+   classified as full-width and vanish from both columns.
+3. **Line starts** decide where one ingredient ends and the next begins. The
+   line above gets a veto when it ends mid-phrase, because "drained, and sliced
+   into" is followed by "4 patty-size pieces", which starts with a digit and is
+   still the same ingredient.
+4. **Vertical gaps** split unnumbered method into steps, at `max(typical*1.22,
+   typical+10)`. Paragraph leading is only slightly looser than line leading —
+   1.45x never fired and ran five steps together.
+5. **Type size** finds the title, among non-full-width lines in the top 25%
+   only. An intro paragraph is set nearly as tall as the title and sits right
+   under it, so height alone picks the blurb about half the time. Whatever
+   becomes the title is then excluded from the column, or it reads as the first
+   ingredient.
+
+**OCR renders fractions as letters** — ½ as "a" or "V½", ¼ as "Va"/"V4"/"/4",
+⅓ as "s", 1 as "l" or "I". A lone letter counts as a quantity **only when a
+unit follows** ("Va teaspoon", "A cup"); allow any following word and "as
+grapeseed, canola," becomes an ingredient of its own. Requiring a clean digit
+merged three ingredients into one on a real page.
+
+Other things the fixtures caught:
+- A starred footnote runs to the end of the ingredient column and reads exactly
+  like ingredients ("is a blend of cinnamon,"). Everything after a `*` is out.
+- Servings must match **on one line**. A page printing "SERVES" down the margin
+  above the folio "143" gave 143 servings when matching across lines.
+- Anything in the method column **above where the ingredients start** is intro
+  spill, not step 1.
+- Scans save themselves to `scan_exports`; the Recipes screen offers
+  "N scans saved · Send them all" while any wait, and one share sends the batch.
+  Clear only on `Share.sharedAction` — dismissing must not destroy the batch.
+- Tune only against exported scans. ML Kit's line breaks and column order are
+  the real input; a photo read by eye is not.
 
 ## Two worlds, two design languages
 

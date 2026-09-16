@@ -325,6 +325,8 @@ export async function importFromImages(uris: string[]): Promise<OcrRecipe & { ra
   return { ...parseRecipeText(rawText), rawText };
 }
 
+import { parseScanPages } from './scanParse';
+
 /* ── whole-page capture ───────────────────────────────────── */
 
 /**
@@ -404,5 +406,34 @@ export async function importFromPages(
     texts.push(text);
   }
   const rawText = texts.join('\n');
+
+  // Parse from the layout when there is one. Where the text sat on the page
+  // answers the ingredients/method split outright, which guessing from wording
+  // never managed: parseRecipeText read prose as ingredients, kept only the
+  // first line of each step, and lost every ingredient that wrapped.
+  const haveGeometry = pages.some((p) => p.lines.some((l) => l.w > 0 && l.h > 0));
+  if (haveGeometry) {
+    const laid = parseScanPages(pages);
+    if (laid.ingredients.length || laid.steps.length) {
+      const fromText = parseRecipeText(rawText);
+      return {
+        name: laid.name,
+        ingredients: laid.ingredients,
+        steps: laid.steps,
+        servings: laid.servings,
+        // Timings are prose on the page rather than a matter of layout, so they
+        // still come from the text parser.
+        prepMin: fromText.prepMin,
+        cookMin: fromText.cookMin,
+        notes: laid.notes,
+        warnings: laid.warnings,
+        rawText,
+        pages,
+      };
+    }
+  }
+
+  // No geometry — a picked screenshot, or an older build — so fall back to
+  // reading it by wording alone.
   return { ...parseRecipeText(rawText), rawText, pages };
 }
