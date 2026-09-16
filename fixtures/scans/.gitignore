@@ -1,0 +1,2 @@
+# Exported scans are diagnostics, not source. Keep the README.
+*.json
