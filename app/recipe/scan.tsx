@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator, Share } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { RecipeForm } from '../../components/RecipeForm';
 import { PageCamera } from '../../components/PageCamera';
 import { Toast, B } from '../../components/ui';
 import { importFromPages, type OcrRecipe, type ScanPage, type Shot } from '../../lib/ocr';
-import { saveRecipe, type RecipeInput } from '../../lib/db';
+import { saveRecipe, saveScanExport, countScanExports, type RecipeInput } from '../../lib/db';
 import { useTheme } from '../../theme/ThemeProvider';
 
 /**
@@ -25,7 +25,8 @@ export default function ScanRecipe() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<OcrRecipe | null>(null);
-  const [shared, setShared] = useState(false);
+  /** How many scans are saved and waiting to be sent, including this one. */
+  const [saved, setSaved] = useState<number | null>(null);
 
   async function read(shots: Shot[]) {
     setPages(shots);
@@ -35,44 +36,28 @@ export default function ScanRecipe() {
       const out = await importFromPages(shots);
       setScan(out.pages);
       setResult(out);
+      // Saved without asking. Sharing each scan as it happened meant a share
+      // sheet and an email per recipe, which nobody would do thirty times.
+      saveScanExport({
+        kind: 'health-app-scan',
+        at: new Date().toISOString(),
+        pages: out.pages,
+        parsed: {
+          name: out.name,
+          servings: out.servings,
+          prepMin: out.prepMin,
+          cookMin: out.cookMin,
+          ingredients: out.ingredients,
+          steps: out.steps,
+        },
+      })
+        .then(countScanExports)
+        .then(setSaved)
+        .catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not read those photos.');
     } finally {
       setBusy(false);
-    }
-  }
-
-  /**
-   * Hand the raw OCR out of the phone so a scan can become a test case.
-   *
-   * What ML Kit actually returned is the only honest input to tune the parser
-   * against — its line breaks, its misreads, the order it stitches columns in.
-   * Positions go too: which column a line sits in is the strongest signal for
-   * telling ingredients from method, and the parser currently ignores it.
-   *
-   * Uses the platform share sheet, which is part of React Native itself, so
-   * this needed no new native module and shipped over the air.
-   */
-  async function exportScan() {
-    try {
-      await Share.share({
-        message: JSON.stringify({
-          kind: 'health-app-scan',
-          at: new Date().toISOString(),
-          pages: scan,
-          parsed: {
-            name: result?.name ?? null,
-            servings: result?.servings ?? null,
-            prepMin: result?.prepMin ?? null,
-            cookMin: result?.cookMin ?? null,
-            ingredients: result?.ingredients ?? [],
-            steps: result?.steps ?? [],
-          },
-        }),
-      });
-      setShared(true);
-    } catch {
-      // Dismissing the share sheet is not an error worth a screen.
     }
   }
 
@@ -85,7 +70,7 @@ export default function ScanRecipe() {
     setResult(null);
     setPages([]);
     setScan([]);
-    setShared(false);
+    setSaved(null);
   }
 
   /* ── reading ── */
@@ -146,24 +131,13 @@ export default function ScanRecipe() {
           </Pressable>
           <Text style={{ fontFamily: fonts.display, fontSize: 19, color: c.ink, flex: 1 }}>Review scan</Text>
 
-          {/* Sending the raw OCR out is how a bad scan becomes a fix. */}
-          <Pressable
-            onPress={exportScan}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Export the scan data"
-            style={{
-              borderWidth: 1,
-              borderColor: shared ? c.line : c.nut,
-              borderRadius: 7,
-              paddingVertical: 6,
-              paddingHorizontal: 11,
-            }}
-          >
-            <Text style={{ fontFamily: fonts.semi, fontSize: 12, color: shared ? c.inkFaint : c.nut }}>
-              {shared ? 'Sent' : 'Export scan'}
+          {/* Saved automatically; sending the batch lives on the Recipes
+              screen so thirty scans go out as one share, not thirty. */}
+          {saved != null ? (
+            <Text style={{ fontFamily: fonts.semi, fontSize: 11.5, color: c.inkFaint }}>
+              {saved} saved to send
             </Text>
-          </Pressable>
+          ) : null}
         </View>
 
         <View style={{ paddingHorizontal: 14 }}>

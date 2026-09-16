@@ -74,9 +74,15 @@ region-filter machinery are gone — `git log` has them if the idea comes back.
 **Splitting ingredients from directions is the open problem.** It is being
 fixed against a corpus, not by guessing:
 
-- The review screen has an **Export scan** button. It shares the raw ML Kit
-  output — every line with its position — plus what the parser made of it.
-  Uses React Native's own `Share`, so no native module and no new APK.
+- **Every scan saves itself** to the `scan_exports` table — raw ML Kit output,
+  every line with its position, plus what the parser made of it. The Recipes
+  screen then shows "N scans saved · Send them all" while any are waiting, and
+  one share sends the batch. Sharing each scan as it happened meant a share
+  sheet and an email per recipe, which is not a workflow anyone follows thirty
+  times. The line disappears once the batch is sent, so the screen goes back to
+  its three things. Uses React Native's own `Share` — no native module, no APK.
+- **Clear only on `Share.sharedAction`.** Dismissing the sheet must not destroy
+  the batch.
 - Tune only against exported scans. ML Kit's line breaks, misreads and column
   order are the real input; a transcription read by eye is not, and tuning
   against one fixes problems the phone does not have.

@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, Pressable, Image, ScrollView, useWindowDimensions } from 'react-native';
+import {
+  View, Text, Pressable, Image, ScrollView, Share, useWindowDimensions,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { listRecipes, getSetting, setSetting, type Recipe } from '../lib/db';
+import {
+  listRecipes, getSetting, setSetting,
+  countScanExports, allScanExports, clearScanExports,
+  type Recipe,
+} from '../lib/db';
 import { Icon, type IconName } from '../components/Icon';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -34,6 +40,8 @@ export default function Recipes() {
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  /** Scans saved by the scanner, waiting to be sent for parser tuning. */
+  const [pendingScans, setPendingScans] = useState(0);
 
   // Restore the last-used view. Failing to read it is not worth surfacing.
   useEffect(() => {
@@ -54,9 +62,31 @@ export default function Recipes() {
           setDbError(e instanceof Error ? e.message : 'Could not read your recipes.');
           setLoading(false);
         });
+      countScanExports().then((n) => { if (alive) setPendingScans(n); }).catch(() => {});
       return () => { alive = false; };
     }, [])
   );
+
+  /**
+   * Send every saved scan in one share, then forget them.
+   *
+   * This is temporary tooling for fixing the ingredients/directions split, and
+   * it only appears while scans are waiting — the screen is back to three
+   * things the moment the batch is sent.
+   */
+  async function sendScans() {
+    try {
+      const payload = await allScanExports();
+      const res = await Share.share({ message: payload });
+      // Only clear on a real send: dismissing the sheet must not lose them.
+      if (res.action === Share.sharedAction) {
+        await clearScanExports();
+        setPendingScans(0);
+      }
+    } catch {
+      // Nothing is lost by a failed share; the scans stay saved.
+    }
+  }
 
   const toggle = () => {
     const next: View_ = view === 'photos' ? 'names' : 'photos';
@@ -171,6 +201,15 @@ export default function Recipes() {
           backgroundColor: c.surface,
         }}
       >
+        {pendingScans > 0 && !adding ? (
+          <Pressable onPress={sendScans} hitSlop={8} style={{ marginBottom: 12 }}>
+            <Text style={{ fontFamily: fonts.semi, fontSize: 12.5, color: c.inkSoft }}>
+              {pendingScans} scan{pendingScans === 1 ? '' : 's'} saved ·{' '}
+              <Text style={{ color: c.nut }}>Send them all</Text>
+            </Text>
+          </Pressable>
+        ) : null}
+
         {adding ? (
           <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
             {WAYS.map((w) => (

@@ -189,6 +189,16 @@ async function openAndMigrate() {
     );
 
     -- Small key/value store for preferences that are not worth their own table.
+    -- Saved scans waiting to be sent for parser tuning. Not recipe data: this
+    -- is the raw OCR of a page plus what the parser made of it, kept so a
+    -- batch can go out in one share rather than one email per scan.
+    CREATE TABLE IF NOT EXISTS scan_exports (
+      id         TEXT PRIMARY KEY NOT NULL,
+      user_id    TEXT NOT NULL DEFAULT 'local',
+      created_at TEXT NOT NULL,
+      payload    TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS app_settings (
       key        TEXT PRIMARY KEY NOT NULL,
       value      TEXT,
@@ -701,4 +711,47 @@ export async function getNumberSetting(key: string, fallback: number): Promise<n
   const raw = await getSetting(key);
   const n = raw == null ? NaN : Number(raw);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/* ── saved scans ────────────────────────────────────────────── */
+
+/**
+ * Keep a scan's raw OCR so a batch can be sent in one go.
+ *
+ * Sharing each scan as it happens meant one email per recipe, which is not a
+ * workflow anybody would follow thirty times. These pile up locally instead.
+ */
+export async function saveScanExport(payload: unknown): Promise<void> {
+  const db = await ready();
+  await db.runAsync(
+    `INSERT INTO scan_exports (id, user_id, created_at, payload) VALUES (?, ?, ?, ?)`,
+    [uid(), LOCAL_USER, new Date().toISOString(), JSON.stringify(payload)]
+  );
+}
+
+export async function countScanExports(): Promise<number> {
+  const db = await ready();
+  const row = await db.getFirstAsync<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM scan_exports WHERE user_id = ?`,
+    [LOCAL_USER]
+  );
+  return row?.n ?? 0;
+}
+
+/** Every saved scan, oldest first, as one JSON array string. */
+export async function allScanExports(): Promise<string> {
+  const db = await ready();
+  const rows = await db.getAllAsync<{ payload: string }>(
+    `SELECT payload FROM scan_exports WHERE user_id = ? ORDER BY created_at ASC`,
+    [LOCAL_USER]
+  );
+  // Payloads are already JSON, so they are joined rather than re-encoded —
+  // parsing and re-stringifying every scan on a phone is pointless work.
+  return '[' + rows.map((r) => r.payload).join(',') + ']';
+}
+
+/** Hard delete: these are throwaway diagnostics, not user content. */
+export async function clearScanExports(): Promise<void> {
+  const db = await ready();
+  await db.runAsync(`DELETE FROM scan_exports WHERE user_id = ?`, [LOCAL_USER]);
 }
