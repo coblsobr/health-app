@@ -27,9 +27,7 @@ import { initDb } from '../lib/db';
 /** The three worlds, plus the two pages that hang off the bottom of the drawer. */
 const SECTIONS: { route: string; label: string; icon: IconName }[] = [
   { route: 'recipes', label: 'Recipes', icon: 'library' },
-  { route: '(nutrition)', label: 'Nutrition', icon: 'basket' },
-  { route: '(fitness)', label: 'Fitness', icon: 'dumbbell' },
-  { route: '(health)', label: 'Health', icon: 'chart' },
+  { route: 'plan', label: 'Plan', icon: 'calendar' },
 ];
 
 const EXTRAS: { route: string; label: string; icon: IconName }[] = [
@@ -105,9 +103,11 @@ function Root() {
         }}
       >
         <Drawer.Screen name="recipes" options={{ title: 'Recipes' }} />
-        <Drawer.Screen name="(nutrition)" options={{ title: 'Nutrition' }} />
-        <Drawer.Screen name="(fitness)" options={{ title: 'Fitness' }} />
-        <Drawer.Screen name="(health)" options={{ title: 'Health' }} />
+        <Drawer.Screen name="plan" options={{ title: 'Plan' }} />
+        {/* The old nutrition tabs still hold the grocery list and diary; they
+            are reachable but no longer in the drawer while the planner is
+            being built out. */}
+        <Drawer.Screen name="(nutrition)" options={{ drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="settings" options={{ title: 'Settings' }} />
         <Drawer.Screen name="account" options={{ title: 'Account & Sync' }} />
         {/* Reachable from the avatar or by navigation, not listed in the drawer. */}

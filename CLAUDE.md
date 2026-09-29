@@ -153,80 +153,51 @@ Other things the fixtures caught:
 - Tune only against exported scans. ML Kit's line breaks and column order are
   the real input; a photo read by eye is not.
 
-## Two worlds, two design languages
+## Meal planning
 
-Nutrition and Fitness are deliberately **not** the same app with a different
-accent colour. They share the drawer, the theme system and the database; they
-share nothing visually. Read the section for the world you are editing and do
-not carry a primitive across the boundary.
+`lib/planner.ts` is pure and tested (`node --experimental-strip-types
+planner.test.mts`, 44 assertions). `app/plan.tsx` is the flow.
 
-| | Nutrition (and Health) | Fitness |
-|---|---|---|
-| Idea | a cookbook | a training logbook |
-| Chrome | filled section-coloured app bar, centred title | black spine down the left edge, no bar |
-| Nav | bottom tabs | numbered rail in the spine |
-| Type | Fraunces + Albert Sans | Archivo + DM Mono |
-| Ground | warm cream `#FFFDF9` | concrete grey `fitPaper`, its own ink and rules |
-| Colour | red on cream | burnt orange `#CC4E14`, charcoal spine |
-| Shapes | photos, rules, the odd card | hairline rules only, no cards at all |
-| Figures | serif, in place | monospace, right-aligned in one column |
-| Primitives | `components/ui.tsx`, `Screen` | `components/fit.tsx`, `fitChrome.tsx` |
+**Cadence is the whole input.** A recipe carries `cadence_days` — "monthly",
+"every 3 months" — and `last_made_at`. It becomes *due* at `lastMade + cadence`.
+A recipe without a cadence is only ever filler.
 
-## Fitness — the logbook
+- **Urgency is measured in cadence-lengths, not days.** A monthly recipe two
+  months late has missed two turns; a quarterly one two months late has missed
+  none. Sorting by raw days overdue lets rare recipes crowd out frequent ones.
+- **`planCadence` deliberately does not fill the gaps.** It reports open dates
+  and stops. Being asked what to do with them is the feature — a planner that
+  silently fills a month with whatever it found is one nobody trusts.
+- **A child is a fraction of an adult portion** (`kidFactor`, 0.5). Counting a
+  five-year-old as a whole serving buys a third too much food every day.
+- **Each dinner is scaled to cover that night plus next-day lunches**, then
+  rounded up to whole batches — half a recipe is not a thing you can cook.
+  `batchesFor` allows a 0.02 whisker so 4.01 servings of a 4-serving recipe is
+  one batch, not two.
+- **A missing calorie figure falls back to servings.** Planning by calories
+  with `kcal = null` would otherwise quietly cook one portion for a family.
+- **Fillers respect a minimum gap** against the whole plan, cadence entries
+  included, so a filler never lands beside the same recipe twice.
+- `replacePlan` is scoped to a date range: rebuilding next month must not wipe
+  this week's plan, which may already be shopped for.
 
-Every rule here is a reaction to a specific complaint: *"a centred number at the
-top, selection buttons at the bottom, a chart, and all that spaced out — that's
-how every single app made with Claude looks."*
+**Not built yet: finding brand-new recipes online.** A search API is a
+recurring cost, which the brief rules out. The free path is RSS or sitemap
+feeds from a handful of chosen food blogs, run through the existing JSON-LD
+importer in `lib/import.ts`.
 
-- **No cards.** Rows sit on the page ground, divided by full-bleed hairlines.
-- **No centred hero figure.** The number a screen exists to show goes at the end
-  of a line, in the same right-hand column as every other number.
-- **No standalone chart panel.** A magnitude is a bar *inside* its row, so the
-  chart and the table are one object.
-- **No segmented control and no bottom bar.** Period switching is `<Switcher>`,
-  small caps sitting on the right of a column head. Section switching is the
-  rail. Both were pill-row shapes; both are gone.
-- **Every block must look different from the block above it.** This is the
-  rule that matters most, and the one that took three tries to get right. A run
-  of sections that share a heading, a rule and a row height fails exactly the
-  way a run of cards fails: nothing is louder than anything else, so the eye
-  finds no hierarchy and reads all of it as noise. A screen gets **one**
-  `<Statement>`, **one** `<MetaLine>`, **one** list, **one** `<Aside>`.
-- **Say less.** Three or four facts per screen. Anything secondary goes on the
-  MetaLine — steps, active minutes and distance are one line, not three rows.
-  If a section needs a fifth block, it probably needs its own screen.
-- **Rules belong to lists.** A hairline under every single thing is noise.
-- **Figures are monospaced and tabular** (`<Fig>`); words are Archivo (`<T>`).
-- **Fitness owns its whole palette**, not just an accent: `fitPaper`,
-  `fitText`, `fitTextSoft`, `fitTextFaint`, `fitLine`, `fitTrack`, `fitInk`.
-  Never use `c.surface`, `c.ink` or `c.line` on a Fitness screen — borrowing
-  Nutrition's warm cream and then putting a cool accent on it is why the
-  colours read as mismatched for two passes.
-- Primitives: `Statement`, `Bar`, `MetaLine`, `Label`, `Session`, `Aside`,
-  `Row`, `Rule`, `Fig`, `T`, `Switcher`, `Note`, `FitBtn`, and
-  `FitScreen` / `FitRail` for the chrome.
-- The rail navigates with `navigation.dispatch({ ...CommonActions.navigate(route),
-  target: state.key })`. **`navigation.navigate()` silently does nothing here** —
-  a navigator's own navigation object navigates in its *parent*, so it asked the
-  Drawer for a route it does not have. `CommonActions` comes from
-  `expo-router/react-navigation`, never from `@react-navigation/*`.
-- `tabBarPosition: 'left'` is what makes the navigator lay out in a row.
+## Design — cookbook type
 
-## Nutrition — cookbook type
-
-Keep these when adding Nutrition or Health screens:
+Keep these when adding screens:
 
 - **Content sits on the page, separated by `<Rule />`.** A `<Card>` is for a
   thing that is genuinely an object. Do not wrap every group in one.
 - **Sentence-case serif headings** (`<SectionTitle>`), never uppercase tracked
   labels.
 - **No emoji as icons.** Use `components/Icon.tsx`.
-- **Each section owns a colour and wears it.** `Screen` fills the app bar with
-  the section tone: Nutrition red, Health purple. (Fitness does not use
-  `Screen` at all — see above.) Detecting the section is still needed for
-  Health.
-  Detect the section with **`useSegments()`, never `usePathname()`** — the
-  latter strips group segments, so `/(fitness)/today` arrives as `/today`.
+- **One colour, worn confidently.** `Screen` fills the app bar with `c.nut`.
+  Fitness and Health were deleted — nobody wanted a fitness app bolted onto a
+  recipe app — so there is no section to detect any more.
 - **Saturated, not muted.** Confident colour is what separates a real app from
   the generic minimal look; a desaturated palette reads as generated.
 - **Dense over airy.** Generous whitespace everywhere is its own house style.

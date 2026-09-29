@@ -2,7 +2,8 @@ import { useCallback, useState } from 'react';
 import { View, Text, Pressable, ScrollView, Image, Modal, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { getRecipe, deleteRecipe, toggleFavorite, setRating, addPlanEntry, type RecipeFull, type MealSlot } from '../../lib/db';
+import { getRecipe, deleteRecipe, toggleFavorite, setRating, setCadence, addPlanEntry, type RecipeFull, type MealSlot } from '../../lib/db';
+import { CADENCES } from '../../lib/planner';
 import { Card, Ch, Row, Sm, Xs, H3, Btn, Divider, Tag, KV } from '../../components/ui';
 import { estimateRecipe } from '../../lib/nutrition';
 import { toISODate, addDays, formatDayLabel } from '../../lib/plan';
@@ -146,6 +147,39 @@ export default function RecipeDetail() {
                 </Pressable>
               ))}
             </Row>
+          </Card>
+
+          {/* How often you want to make it. This is the whole input to the
+              planner: a recipe with a rhythm gets scheduled, one without it
+              only turns up as filler. */}
+          <Card>
+            <Ch>How often</Ch>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {CADENCES.map((opt) => {
+                const on = (recipe.cadence_days ?? null) === opt.days;
+                return (
+                  <Pressable
+                    key={opt.label}
+                    onPress={async () => {
+                      setRecipe({ ...recipe, cadence_days: opt.days });
+                      await setCadence(id, opt.days);
+                    }}
+                    style={{
+                      paddingVertical: 7,
+                      paddingHorizontal: 11,
+                      borderRadius: 7,
+                      borderWidth: 1,
+                      borderColor: on ? c.nut : c.line,
+                      backgroundColor: on ? c.nutSoft : 'transparent',
+                    }}
+                  >
+                    <Text style={{ fontFamily: on ? fonts.semi : fonts.body, fontSize: 12, color: on ? c.nut : c.inkSoft }}>
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </Card>
 
           {recipe.kcal != null || recipe.protein_g != null ? (

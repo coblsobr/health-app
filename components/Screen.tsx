@@ -1,27 +1,9 @@
 import React from 'react';
 import { View, Text, Pressable, ScrollView, StatusBar as RNStatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRouter, useSegments } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { useTheme } from '../theme/ThemeProvider';
 import { Icon } from './Icon';
-
-/**
- * Which world we are in, taken from the route.
- *
- * Each section wears its own colour in the chrome, so Nutrition and Fitness
- * read as related apps that talk to each other rather than one flat app with
- * a colour-coded tab bar.
- */
-function useSectionTone() {
-  const { c } = useTheme();
-  // useSegments, not usePathname: expo-router strips group segments from the
-  // pathname, so "/(fitness)/today" arrives as "/today" and every section
-  // silently rendered the Nutrition colour.
-  const segments = useSegments() as string[];
-  if (segments.includes('(fitness)')) return c.fit;
-  if (segments.includes('(health)')) return c.hlth;
-  return c.nut;
-}
 
 /**
  * Every screen: a filled section-coloured bar with the hamburger, the title
@@ -45,7 +27,8 @@ export function Screen({
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const router = useRouter();
-  const tone = useSectionTone();
+  // One section left, so the chrome is simply the recipe red.
+  const tone = c.nut;
 
   const Body = scroll ? ScrollView : View;
 

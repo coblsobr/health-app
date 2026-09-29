@@ -29,6 +29,8 @@ export type Recipe = {
   deleted_at: string | null;
   // Per serving. Populated by import when the source publishes it; Phase 3
   // will estimate the rest from the ingredient list.
+  cadence_days: number | null;
+  last_made_at: string | null;
   kcal: number | null;
   protein_g: number | null;
   carbs_g: number | null;
@@ -215,6 +217,11 @@ async function openAndMigrate() {
   `);
 
   await ensureColumns(db, 'recipes', {
+    // How often you want to make it, in days, and when you last did. Both live
+    // on the recipe because the plan is rebuilt from scratch every time and
+    // must not be the only record of a rhythm you set.
+    cadence_days: 'INTEGER',
+    last_made_at: 'TEXT',
     kcal: 'INTEGER',
     protein_g: 'INTEGER',
     carbs_g: 'INTEGER',
@@ -754,4 +761,67 @@ export async function allScanExports(): Promise<string> {
 export async function clearScanExports(): Promise<void> {
   const db = await ready();
   await db.runAsync(`DELETE FROM scan_exports WHERE user_id = ?`, [LOCAL_USER]);
+}
+
+/* ── planning ───────────────────────────────────────────────── */
+
+/** Mark how often you want to cook something. Null clears the rhythm. */
+export async function setCadence(id: string, days: number | null): Promise<void> {
+  const db = await ready();
+  await db.runAsync(`UPDATE recipes SET cadence_days = ?, updated_at = ? WHERE id = ?`, [days, now(), id]);
+}
+
+/** Record that a recipe was cooked, which is what cadence counts from. */
+export async function markMade(id: string, on: string): Promise<void> {
+  const db = await ready();
+  await db.runAsync(`UPDATE recipes SET last_made_at = ?, updated_at = ? WHERE id = ?`, [on, now(), id]);
+}
+
+export type PlannerRow = {
+  id: string;
+  name: string;
+  servings: number;
+  kcal: number | null;
+  rating: number | null;
+  cadence_days: number | null;
+  last_made_at: string | null;
+};
+
+/** Everything the planner needs, and nothing it does not. */
+export async function listForPlanner(): Promise<PlannerRow[]> {
+  const db = await ready();
+  return db.getAllAsync<PlannerRow>(
+    `SELECT id, name, servings, kcal, rating, cadence_days, last_made_at
+       FROM recipes WHERE deleted_at IS NULL AND user_id = ? ORDER BY name`,
+    [LOCAL_USER]
+  );
+}
+
+/**
+ * Replace the plan over a date range.
+ *
+ * Scoped to the range rather than wiping the table: rebuilding next month must
+ * not delete the plan for this week that is already half-shopped for.
+ */
+export async function replacePlan(
+  from: string,
+  to: string,
+  entries: { date: string; recipeId: string; batches: number; servings: number }[]
+): Promise<void> {
+  const db = await ready();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `DELETE FROM meal_plan_entries WHERE user_id = ? AND slot = 'dinner' AND date >= ? AND date <= ?`,
+      [LOCAL_USER, from, to]
+    );
+    for (const e of entries) {
+      const batchId = uid();
+      await db.runAsync(
+        `INSERT INTO meal_plan_entries
+           (id, user_id, date, slot, recipe_id, servings, is_leftover, batch_id, created_at, updated_at)
+         VALUES (?, ?, ?, 'dinner', ?, ?, 0, ?, ?, ?)`,
+        [uid(), LOCAL_USER, e.date, e.recipeId, e.servings, batchId, now(), now()]
+      );
+    }
+  });
 }
