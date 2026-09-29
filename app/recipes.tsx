@@ -3,7 +3,7 @@ import {
   View, Text, Pressable, Image, ScrollView, Share, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useNavigation } from 'expo-router';
 import {
   listRecipes, getSetting, setSetting,
   countScanExports, allScanExports, clearScanExports,
@@ -32,6 +32,7 @@ const WAYS: { icon: IconName; label: string; href: string }[] = [
 export default function Recipes() {
   const { c, fonts } = useTheme();
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
@@ -112,10 +113,26 @@ export default function Recipes() {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
-      <View style={{ paddingTop: insets.top + 14, paddingHorizontal: PAD, paddingBottom: 12 }}>
+      <View
+        style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          paddingTop: insets.top + 14, paddingHorizontal: PAD, paddingBottom: 12,
+        }}
+      >
         <Text style={{ fontFamily: fonts.display, fontSize: 34, color: c.ink, letterSpacing: -0.5 }}>
           Recipes
         </Text>
+        <Pressable
+          onPress={() => navigation.dispatch({ type: 'OPEN_DRAWER' })}
+          hitSlop={14}
+          accessibilityLabel="Open menu"
+          accessibilityRole="button"
+          style={{ width: 24, justifyContent: 'center', gap: 5, paddingVertical: 8 }}
+        >
+          {[0, 1, 2].map((i) => (
+            <View key={i} style={{ height: 2, borderRadius: 2, backgroundColor: c.inkSoft }} />
+          ))}
+        </Pressable>
       </View>
 
       <ScrollView

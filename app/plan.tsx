@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useNavigation } from 'expo-router';
 import {
   listForPlanner, getSetting, setSetting, replacePlan, type PlannerRow,
 } from '../lib/db';
@@ -35,6 +35,7 @@ type Step = 'setup' | 'review' | 'saved';
 export default function Plan() {
   const { c, fonts } = useTheme();
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
 
   const [library, setLibrary] = useState<PlannerRow[]>([]);
@@ -150,10 +151,26 @@ export default function Plan() {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
-      <View style={{ paddingTop: insets.top + 14, paddingHorizontal: PAD, paddingBottom: 8 }}>
+      <View
+        style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          paddingTop: insets.top + 14, paddingHorizontal: PAD, paddingBottom: 8,
+        }}
+      >
         <Text style={{ fontFamily: fonts.display, fontSize: 34, color: c.ink, letterSpacing: -0.5 }}>
           {step === 'setup' ? 'Plan' : step === 'review' ? 'Your plan' : 'Saved'}
         </Text>
+        <Pressable
+          onPress={() => navigation.dispatch({ type: 'OPEN_DRAWER' })}
+          hitSlop={14}
+          accessibilityLabel="Open menu"
+          accessibilityRole="button"
+          style={{ width: 24, justifyContent: 'center', gap: 5, paddingVertical: 8 }}
+        >
+          {[0, 1, 2].map((i) => (
+            <View key={i} style={{ height: 2, borderRadius: 2, backgroundColor: c.inkSoft }} />
+          ))}
+        </Pressable>
       </View>
 
       <ScrollView
@@ -296,9 +313,20 @@ export default function Plan() {
         ) : null}
 
         {step === 'saved' ? (
-          <Text style={{ fontFamily: fonts.body, fontSize: 15, color: c.inkSoft, lineHeight: 22, marginTop: 6 }}>
-            Saved. The grocery list can be built from it next.
-          </Text>
+          <>
+            <Text style={{ fontFamily: fonts.body, fontSize: 15, color: c.inkSoft, lineHeight: 22, marginTop: 6 }}>
+              Saved. Next, turn it into a shopping list — ingredients are added up across every
+              recipe, so one line covers the lot.
+            </Text>
+            <Pressable
+              onPress={() => router.push('/groceries' as never)}
+              style={{ marginTop: 20, backgroundColor: c.nut, borderRadius: 8, paddingVertical: 14, alignItems: 'center' }}
+            >
+              <Text style={{ fontFamily: fonts.bold, fontSize: 15, color: '#fff', letterSpacing: 0.8 }}>
+                Build the grocery list
+              </Text>
+            </Pressable>
+          </>
         ) : null}
       </ScrollView>
 

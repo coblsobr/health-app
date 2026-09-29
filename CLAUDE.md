@@ -44,14 +44,21 @@ Native changes (a new native module, an SDK bump) change the fingerprint
 runtimeVersion and cannot ship over the air — they need a new APK, and the
 phone stays on its last compatible update until that is installed.
 
-## Right now: Recipes is the app
+## The app: Recipes, Plan, Groceries
 
-`app/recipes.tsx` is the landing screen and the only one being worked on. It is
-deliberately three things — the recipes, a photos/names toggle in the
-bottom-left corner, and one Add button — and nothing else. **Do not add a
-search field, a sort control, a filter strip, a tab bar or a summary line to
-it.** Every one of those was there before and every one of them was scaffolding
-around a library holding three recipes.
+Three screens in the drawer, each a standalone route (not a tab group).
+
+**Every top-level screen needs its own menu button.** These screens do not use
+`components/Screen.tsx`, so nothing draws drawer chrome for them — leave it off
+and the drawer is reachable only by an edge swipe, which meant Plan and
+Groceries existed for a week without being findable. `navigation.dispatch({
+type: 'OPEN_DRAWER' })`, top-right.
+
+`app/recipes.tsx` is the landing screen. It is deliberately the recipes, a
+photos/names toggle in the bottom-left corner, one Add button, and the menu —
+nothing else. **Do not add a search field, a sort control, a filter strip, a
+tab bar or a summary line to it.** Every one of those was there before and
+every one of them was scaffolding around a library holding three recipes.
 
 ADD toggles three small cells directly above it — Hand (`/recipe/new`),
 Camera (`/recipe/scan`), Web (`/recipe/import`). **Not a bottom sheet.** A
@@ -211,6 +218,23 @@ Re-probe before adding one. Other things this cost:
   candidate picking — can be tested in node without the network module.
 - Failures are normal, not errors: a round-up post has no recipe markup. It
   tries `count * 4` candidates and only speaks up if nothing worked.
+
+## Groceries — `app/groceries.tsx`
+
+Built from a **selection of recipes** kept in `grocery_recipes`, seeded from
+the plan but stored separately. Shopping decisions are not planning decisions:
+dropping a dish off the list because the cupboard already has what it needs
+must not quietly delete it from the week's dinners.
+
+- **Ticks survive a rebuild.** `replacePlanGrocery` matches on `item_key`, so
+  adding one more recipe halfway round the shop does not empty the trolley.
+- **Every line says what it is for** (`recipes` column). A merged line is a
+  mystery otherwise, exactly when you are stood in the aisle deciding to skip
+  it.
+- Merging, scaling and aisles are `lib/grocery.ts`, which is pure and already
+  tested — scale, then batch, then merge, in that order.
+- Removing a line (✕) drops that item only; removing a recipe from the source
+  list rebuilds without it. Both are reversible; neither touches the plan.
 
 ## Design — cookbook type
 
