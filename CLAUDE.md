@@ -181,10 +181,36 @@ A recipe without a cadence is only ever filler.
 - `replacePlan` is scoped to a date range: rebuilding next month must not wipe
   this week's plan, which may already be shopped for.
 
-**Not built yet: finding brand-new recipes online.** A search API is a
-recurring cost, which the brief rules out. The free path is RSS or sitemap
-feeds from a handful of chosen food blogs, run through the existing JSON-LD
-importer in `lib/import.ts`.
+## Finding new recipes — `lib/discover.ts`, `app/discover.tsx`
+
+Free, no key, no quota: read a food blog's public RSS feed for candidate
+links, then import one through the JSON-LD path that already works. A search
+API would be a recurring bill, which the brief rules out.
+
+**Every source was verified live, twice, before being listed — half the
+obvious candidates failed.** A feed that loads proves nothing about whether
+the article behind it will:
+
+- **403 to non-browser requests**: Budget Bytes, Cookie and Kate, Pinch of
+  Yum, Gimme Some Oven, The Mediterranean Dish, Damn Delicious, Half Baked
+  Harvest, 101 Cookbooks, and all of Dotdash Meredith.
+- **Smitten Kitchen** publishes ingredients but no `recipeInstructions`, so
+  every import lands with zero steps.
+- Working: Love & Lemons, RecipeTin Eats, Well Plated, Minimalist Baker,
+  Naturally Ella, Skinnytaste.
+
+Re-probe before adding one. Other things this cost:
+
+- **Strip the query string before fetching** (`cleanLink`). Feeds carry
+  campaign parameters and Cookie and Kate ships an *unresolved* merge tag,
+  `?adt_ei=*|EMAIL|*`, which is not a requestable URL.
+- **Candidates interleave across sources** so one prolific blog cannot fill
+  the whole list, and are matched against `listSourceUrls()` so a recipe is
+  never offered twice.
+- **`importFromUrl` is required lazily**, so the pure half — feed parsing,
+  candidate picking — can be tested in node without the network module.
+- Failures are normal, not errors: a round-up post has no recipe markup. It
+  tries `count * 4` candidates and only speaks up if nothing worked.
 
 ## Design — cookbook type
 

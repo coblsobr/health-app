@@ -825,3 +825,13 @@ export async function replacePlan(
     }
   });
 }
+
+/** Links already in the library, so discovery never offers one twice. */
+export async function listSourceUrls(): Promise<string[]> {
+  const db = await ready();
+  const rows = await db.getAllAsync<{ source_url: string }>(
+    `SELECT source_url FROM recipes WHERE user_id = ? AND source_url IS NOT NULL AND deleted_at IS NULL`,
+    [LOCAL_USER]
+  );
+  return rows.map((r) => r.source_url);
+}

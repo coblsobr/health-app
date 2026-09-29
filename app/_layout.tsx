@@ -104,6 +104,7 @@ function Root() {
       >
         <Drawer.Screen name="recipes" options={{ title: 'Recipes' }} />
         <Drawer.Screen name="plan" options={{ title: 'Plan' }} />
+        <Drawer.Screen name="discover" options={{ drawerItemStyle: { display: 'none' } }} />
         {/* The old nutrition tabs still hold the grocery list and diary; they
             are reachable but no longer in the drawer while the planner is
             being built out. */}

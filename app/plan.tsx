@@ -258,9 +258,15 @@ export default function Plan() {
                   <Text style={{ fontFamily: fonts.semi, fontSize: 14, color: c.nut }}>Choose them for me</Text>
                 </Pressable>
 
+                <Pressable
+                  onPress={() => router.push('/discover' as never)}
+                  style={{ marginTop: 10, borderWidth: 1, borderColor: c.line, borderRadius: 8, paddingVertical: 12, alignItems: 'center' }}
+                >
+                  <Text style={{ fontFamily: fonts.semi, fontSize: 14, color: c.nut }}>Find new recipes online</Text>
+                </Pressable>
                 <Text style={{ fontFamily: fonts.body, fontSize: 12, color: c.inkFaint, marginTop: 10, lineHeight: 18 }}>
-                  Finding brand-new recipes online isn't wired up yet — see the note in the plan doc
-                  about doing it from site feeds rather than a paid search API.
+                  Reads a few food blogs' public feeds — no account, no cost. Anything you keep
+                  lands in the library, and then counts as "never tried" here.
                 </Text>
               </>
             ) : null}
