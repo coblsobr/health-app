@@ -5,10 +5,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useNavigation } from 'expo-router';
 import {
-  listRecipes, getSetting, setSetting,
+  listRecipes, getSetting, setSetting, setCadence,
   countScanExports, allScanExports, clearScanExports,
   type Recipe,
 } from '../lib/db';
+import { CADENCES, cadenceLabel } from '../lib/planner';
 import { Icon, type IconName } from '../components/Icon';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -43,6 +44,8 @@ export default function Recipes() {
   const [adding, setAdding] = useState(false);
   /** Scans saved by the scanner, waiting to be sent for parser tuning. */
   const [pendingScans, setPendingScans] = useState(0);
+  /** Which row has its cadence picker open, if any. */
+  const [tuning, setTuning] = useState<string | null>(null);
 
   // Restore the last-used view. Failing to read it is not worth surfacing.
   useEffect(() => {
@@ -188,15 +191,66 @@ export default function Recipes() {
         ) : (
           <View>
             {recipes.map((r) => (
-              <Pressable key={r.id} onPress={() => router.push(`/recipe/${r.id}`)}>
-                <Text
-                  numberOfLines={1}
-                  style={{ fontFamily: fonts.body, fontSize: 16, color: c.ink, paddingVertical: 14 }}
-                >
-                  {r.name}
-                </Text>
+              <View key={r.id}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Pressable style={{ flex: 1 }} onPress={() => router.push(`/recipe/${r.id}`)}>
+                    <Text
+                      numberOfLines={1}
+                      style={{ fontFamily: fonts.body, fontSize: 16, color: c.ink, paddingVertical: 14 }}
+                    >
+                      {r.name}
+                    </Text>
+                  </Pressable>
+
+                  {/* How often you want to make it, set right here in the list
+                      rather than three taps deep inside the recipe. */}
+                  <Pressable onPress={() => setTuning(tuning === r.id ? null : r.id)} hitSlop={8}>
+                    <Text
+                      style={{
+                        fontFamily: r.cadence_days ? fonts.semi : fonts.body,
+                        fontSize: 12,
+                        color: r.cadence_days ? c.nut : c.inkFaint,
+                      }}
+                    >
+                      {r.cadence_days ? cadenceLabel(r.cadence_days) : 'How often?'}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {tuning === r.id ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingBottom: 12 }}>
+                    {CADENCES.map((opt) => {
+                      const on = (r.cadence_days ?? null) === opt.days;
+                      return (
+                        <Pressable
+                          key={opt.label}
+                          onPress={async () => {
+                            setRecipes((xs) =>
+                              xs.map((x) => (x.id === r.id ? { ...x, cadence_days: opt.days } : x))
+                            );
+                            setTuning(null);
+                            await setCadence(r.id, opt.days);
+                          }}
+                          style={{
+                            paddingVertical: 6,
+                            paddingHorizontal: 10,
+                            borderRadius: 6,
+                            borderWidth: 1,
+                            borderColor: on ? c.nut : c.line,
+                            backgroundColor: on ? c.nutSoft : 'transparent',
+                          }}
+                        >
+                          <Text style={{ fontFamily: on ? fonts.semi : fonts.body, fontSize: 12, color: on ? c.nut : c.inkSoft }}>
+                            {opt.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : null}
+
                 <View style={{ height: 1, backgroundColor: c.line }} />
-              </Pressable>
+              </View>
             ))}
           </View>
         )}

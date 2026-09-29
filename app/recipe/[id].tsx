@@ -70,7 +70,7 @@ export default function RecipeDetail() {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}>
         <View style={{ height: 190, backgroundColor: c.cardAlt }}>
           {recipe.photo_uri ? (
             <Image source={{ uri: recipe.photo_uri }} style={{ width: '100%', height: '100%' }} />

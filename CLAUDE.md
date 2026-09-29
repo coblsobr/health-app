@@ -54,6 +54,16 @@ and the drawer is reachable only by an edge swipe, which meant Plan and
 Groceries existed for a week without being findable. `navigation.dispatch({
 type: 'OPEN_DRAWER' })`, top-right.
 
+**Every scroll area must end above `insets.bottom`.** Android's gesture bar
+covers the last ~48px, and a control under it cannot be tapped at all — the
+cadence picker on the recipe screen was unusable for exactly this reason.
+`paddingBottom: insets.bottom + 48`, never a bare number.
+
+**Cadence is settable from the names list**, not only inside a recipe: tap the
+"How often?" label on a row and the options open in place. That is where it was
+asked for, and it is the difference between marking twenty recipes and marking
+two.
+
 `app/recipes.tsx` is the landing screen. It is deliberately the recipes, a
 photos/names toggle in the bottom-left corner, one Add button, and the menu —
 nothing else. **Do not add a search field, a sort control, a filter strip, a
@@ -276,7 +286,8 @@ get reworked one at a time.
 One set of semantic tokens, two value sets, in `theme/tokens.ts`. Components
 **never** use a raw hex — always `const { c } = useTheme()`.
 
-- `c.nut` red = Nutrition, `c.fit` green = Fitness, `c.hlth` purple = Health
+- `c.nut` red is the app's colour. `c.fit` and `c.hlth` survive in the token
+  file but nothing uses them since Fitness and Health were deleted.
 - Adding a third theme = a third object in `tokens.ts`, nothing else
 - Light/Dark/System lives in `app/settings.tsx`, and **is persisted** via
   `app_settings.theme_mode`
@@ -286,16 +297,20 @@ One set of semantic tokens, two value sets, in `theme/tokens.ts`. Components
 ```
 app/
   _layout.tsx        Drawer + fonts + ThemeProvider
-  index.tsx          redirect -> /(nutrition)/diary
-  (nutrition)/       diary · library · add · plan · shop
-  (fitness)/         today · history · log · plan · progress
-  (health)/          today · goals · trends
+  index.tsx          redirect -> /recipes
+  recipes.tsx        the library (landing screen)
+  plan.tsx           build a dinner plan from cadences
+  groceries.tsx      the shopping list
+  discover.tsx       find new recipes from blog feeds
+  recipe/            [id] · new · import · scan · edit/[id]
+  (nutrition)/       diary · library · add · plan · shop  (legacy, not in the drawer)
   profile · settings · account
-components/          Screen (section chrome), ui (kit), Icon, Ring, tabBar,
-                     RecipeForm, UpdatePanel
+components/          Screen (legacy chrome), ui (kit), Icon, tabBar,
+                     RecipeForm, PageCamera, UpdatePanel
 lib/                 db.ts (SQLite + all queries), import.ts (link),
-                     ocr.ts (photo), nutrition.ts + foods.json (USDA),
-                     plan.ts (meal plan), grocery.ts, health/ (parked)
+                     ocr.ts + scanParse.ts (photo), nutrition.ts + foods.json,
+                     planner.ts (cadence plan), grocery.ts, discover.ts,
+                     plan.ts (legacy batch planner)
 theme/               tokens.ts, ThemeProvider.tsx
 ```
 

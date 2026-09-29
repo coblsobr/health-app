@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { View, Text, TextInput, Pressable, ScrollView, Image, KeyboardAvoidingView, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../theme/ThemeProvider';
@@ -20,6 +21,7 @@ type Props = {
 };
 
 export function RecipeForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
+  const insets = useSafeAreaInsets();
   const { c, fonts } = useTheme();
 
   const [name, setName] = useState(initial?.name ?? '');
@@ -109,7 +111,10 @@ export function RecipeForm({ initial, submitLabel, onSubmit, onCancel }: Props) 
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{ padding: 14, paddingBottom: insets.bottom + 48 }}
+        keyboardShouldPersistTaps="handled"
+      >
         {error ? (
           <View style={{ backgroundColor: c.dangerSoft, borderRadius: 12, padding: 10, marginBottom: 10 }}>
             <Text style={{ fontFamily: fonts.semi, fontSize: 11.5, color: c.danger }}>{error}</Text>

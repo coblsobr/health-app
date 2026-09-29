@@ -339,9 +339,9 @@ export const CADENCES: { label: string; days: number | null }[] = [
   { label: 'Every 3 months', days: 90 },
   { label: 'Twice a year', days: 182 },
   { label: 'Once a year', days: 365 },
-  { label: 'No rhythm', days: null },
+  { label: 'Not scheduled', days: null },
 ];
 
 export function cadenceLabel(days: Cadence): string {
-  return CADENCES.find((c) => c.days === days)?.label ?? 'No rhythm';
+  return CADENCES.find((c) => c.days === days)?.label ?? 'Not scheduled';
 }

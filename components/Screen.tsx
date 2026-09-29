@@ -93,7 +93,7 @@ export function Screen({
 
       <Body
         style={{ flex: 1 }}
-        contentContainerStyle={scroll ? { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 32 } : undefined}
+        contentContainerStyle={scroll ? { paddingHorizontal: 16, paddingTop: 14, paddingBottom: insets.bottom + 40 } : undefined}
         showsVerticalScrollIndicator={false}
       >
         {children}
