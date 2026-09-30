@@ -781,19 +781,49 @@ export type PlannerRow = {
   id: string;
   name: string;
   servings: number;
-  kcal: number | null;
   rating: number | null;
+  is_favorite: number;
   cadence_days: number | null;
   last_made_at: string | null;
+  minutes: number | null;
+  /** Ingredient lines and tags, newline-joined — what meal kinds are read from. */
+  ingredients: string | null;
+  tags: string | null;
 };
 
 /** Everything the planner needs, and nothing it does not. */
 export async function listForPlanner(): Promise<PlannerRow[]> {
   const db = await ready();
   return db.getAllAsync<PlannerRow>(
-    `SELECT id, name, servings, kcal, rating, cadence_days, last_made_at
-       FROM recipes WHERE deleted_at IS NULL AND user_id = ? ORDER BY name`,
+    `SELECT r.id, r.name, r.servings, r.rating, r.is_favorite, r.cadence_days, r.last_made_at,
+            CASE WHEN r.prep_min IS NULL AND r.cook_min IS NULL THEN NULL
+                 ELSE COALESCE(r.prep_min, 0) + COALESCE(r.cook_min, 0) END AS minutes,
+            (SELECT group_concat(raw_text, char(10)) FROM recipe_ingredients i WHERE i.recipe_id = r.id) AS ingredients,
+            (SELECT group_concat(tag, char(10)) FROM recipe_tags t WHERE t.recipe_id = r.id) AS tags
+       FROM recipes r WHERE r.deleted_at IS NULL AND r.user_id = ? ORDER BY r.name`,
     [LOCAL_USER]
+  );
+}
+
+/**
+ * Count a planned dinner as cooked once its date has passed.
+ *
+ * Cadence counts from `last_made_at`, and nothing else ever set it — so every
+ * rhythm behaved as if the recipe had never been made. The plan is the best
+ * record there is of what was cooked.
+ */
+export async function markPastPlanMade(today: string): Promise<void> {
+  const db = await ready();
+  await db.runAsync(
+    `UPDATE recipes
+        SET last_made_at = (SELECT MAX(e.date) FROM meal_plan_entries e
+                             WHERE e.recipe_id = recipes.id AND e.deleted_at IS NULL AND e.date < ?),
+            updated_at = ?
+      WHERE user_id = ?
+        AND (SELECT MAX(e.date) FROM meal_plan_entries e
+              WHERE e.recipe_id = recipes.id AND e.deleted_at IS NULL AND e.date < ?)
+            > COALESCE(last_made_at, '')`,
+    [today, now(), LOCAL_USER, today]
   );
 }
 
@@ -806,7 +836,7 @@ export async function listForPlanner(): Promise<PlannerRow[]> {
 export async function replacePlan(
   from: string,
   to: string,
-  entries: { date: string; recipeId: string; batches: number; servings: number }[]
+  entries: { date: string; recipeId: string; servings: number }[]
 ): Promise<void> {
   const db = await ready();
   await db.withTransactionAsync(async () => {

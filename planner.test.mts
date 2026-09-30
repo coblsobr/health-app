@@ -1,8 +1,9 @@
 import {
-  planCadence, fillOpenDates, summarise, servingsNeeded, batchesFor, urgency,
-  addDays, daysBetween, DEFAULT_FILL,
-  type PlanRecipe, type Household, type Targets,
+  buildPlan, timesInPlan, scaleFor, servingsPerCook, setDay, swapDay, clearDay,
+  summarise, repeatGap, addDays, daysBetween,
+  type PlanRecipe, type Household, type Prefs,
 } from './lib/planner.ts';
+import { inferKinds } from './lib/kinds.ts';
 
 let pass = 0;
 let fail = 0;
@@ -11,156 +12,171 @@ const check = (name: string, cond: boolean, detail = '') => {
   else { fail++; console.log('  FAIL', name, detail && '\n        ' + detail); }
 };
 
-/** Two adults and one kid — the household from the brief. */
-const HOUSE: Household = { adults: 2, kids: 1, kidFactor: 0.5, lunchPeople: 2 };
-const BY_SERVINGS: Targets = { basis: 'servings', adultDinnerKcal: 700, adultLunchKcal: 550 };
-const BY_CALORIES: Targets = { basis: 'calories', adultDinnerKcal: 700, adultLunchKcal: 550 };
+/** Two adults and a one-year-old, with lunch leftovers — the brief. */
+const HOUSE: Household = { perMeal: 2.5, leftoverLunch: true };
+const START = '2026-10-05';
 
 const recipe = (over: Partial<PlanRecipe> & { id: string }): PlanRecipe => ({
-  name: over.id, servings: 4, kcal: 500, rating: 8, cadenceDays: null, lastMade: null, ...over,
+  name: over.id, servings: 4, rating: null, favorite: false,
+  cadenceDays: null, lastMade: null, kinds: [], ...over,
 });
+
+/** A library of twenty ordinary dinners across the proteins. */
+const PROTEINS = ['Chicken', 'Beef', 'Pork', 'Seafood', 'Vegetarian'] as const;
+const LIBRARY = Array.from({ length: 20 }, (_, i) =>
+  recipe({ id: `r${i}`, kinds: [PROTEINS[i % 5]], servings: [4, 6, 8][i % 3] })
+);
 
 console.log('\n════════ how much to cook ════════\n');
 {
-  const need = servingsNeeded(HOUSE, BY_SERVINGS, { kcal: 500 });
-  check('dinner counts the kid as half', need.dinner === 2.5, String(need.dinner));
-  check('lunch for the two adults', need.lunch === 2, String(need.lunch));
-  check('4.5 servings needed in total', need.total === 4.5, String(need.total));
+  check('2.5 a meal plus lunch is 5 a night', servingsPerCook(HOUSE) === 5);
+  check('without leftovers it is 2.5', servingsPerCook({ ...HOUSE, leftoverLunch: false }) === 2.5);
+  check('a 4-serving recipe is cooked 1.5x (6), not doubled', scaleFor(5, 4) === 1.5, String(scaleFor(5, 4)));
+  check('a 6-serving recipe once', scaleFor(5, 6) === 1);
+  check('a 2-serving recipe 2.5x', scaleFor(5, 2) === 2.5, String(scaleFor(5, 2)));
+  check('exactly enough is not rounded up', scaleFor(4, 4) === 1);
+  check('a whisker over is not rounded up', scaleFor(4.05, 4) === 1, String(scaleFor(4.05, 4)));
+  check('never under one batch', scaleFor(1, 8) === 1);
 
-  check('a 4-serving recipe needs 2 batches', batchesFor(4.5, 4) === 2, String(batchesFor(4.5, 4)));
-  check('a 6-serving recipe needs 1', batchesFor(4.5, 6) === 1, String(batchesFor(4.5, 6)));
-  check('exactly enough is still 1 batch', batchesFor(4, 4) === 1, String(batchesFor(4, 4)));
-  check('a rounding whisker over is 1 batch', batchesFor(4.01, 4) === 1, String(batchesFor(4.01, 4)));
-  check('never less than 1', batchesFor(0, 4) === 1);
-
-  const noLunch = servingsNeeded({ ...HOUSE, lunchPeople: 0 }, BY_SERVINGS, { kcal: 500 });
-  check('leftovers off drops the lunch servings', noLunch.total === 2.5, String(noLunch.total));
-
-  const kcal = servingsNeeded(HOUSE, BY_CALORIES, { kcal: 500 });
-  // dinner 700*2.5 = 1750 kcal, lunch 550*2 = 1100 kcal, at 500 per serving
-  check('by calories: 3.5 servings of dinner', kcal.dinner === 3.5, String(kcal.dinner));
-  check('by calories: 2.2 servings of lunch', kcal.lunch === 2.2, String(kcal.lunch));
-
-  const noKcal = servingsNeeded(HOUSE, BY_CALORIES, { kcal: null });
-  check('a recipe with no calories falls back to servings', noKcal.total === 4.5, String(noKcal.total));
+  const plan = buildPlan(LIBRARY, { start: START, days: 30, house: HOUSE, prefs: {}, seed: 1 });
+  check('every night makes at least 5 servings', plan.entries.every((e) => e.servingsMade >= 5),
+    plan.entries.map((e) => e.servingsMade).join(' '));
 }
 
-console.log('\n════════ cadence ════════\n');
+console.log('\n════════ rhythms ════════\n');
 {
-  // Chipotle pasta monthly, marry-me chickpeas quarterly — the brief's example.
-  const recipes = [
-    recipe({ id: 'chipotle-pasta', cadenceDays: 30, lastMade: '2026-09-01' }),
-    recipe({ id: 'marry-me-chickpeas', cadenceDays: 90, lastMade: '2026-08-01' }),
+  const monthly = recipe({ id: 'm', cadenceDays: 30, lastMade: '2026-10-01' });
+  check('monthly is in a month plan even if just made', timesInPlan(monthly, START, 30) === 1);
+  check('weekly lands 4 times a month', timesInPlan(recipe({ id: 'w', cadenceDays: 7 }), START, 30) === 4);
+  check('every 2 weeks lands twice a month', timesInPlan(recipe({ id: 'b', cadenceDays: 14 }), START, 30) === 2);
+  check('weekly lands twice in 2 weeks', timesInPlan(recipe({ id: 'w', cadenceDays: 7 }), START, 14) === 2);
+  check('monthly not due is out of a week plan', timesInPlan(monthly, START, 7) === 0);
+  check('monthly due this week is in it',
+    timesInPlan(recipe({ id: 'm', cadenceDays: 30, lastMade: '2026-09-07' }), START, 7) === 1);
+  check('never-made monthly is in a week plan', timesInPlan(recipe({ id: 'm', cadenceDays: 30 }), START, 7) === 1);
+  check('quarterly in a month only when due',
+    timesInPlan(recipe({ id: 'q', cadenceDays: 90, lastMade: '2026-09-01' }), START, 30) === 0);
+
+  const lib = [
+    ...LIBRARY,
+    recipe({ id: 'tacos', cadenceDays: 7 }),
+    recipe({ id: 'lasagna', cadenceDays: 30, lastMade: '2026-10-02' }),
+    recipe({ id: 'chili', cadenceDays: 14 }),
   ];
-  const plan = planCadence(recipes, '2026-10-01', 90, HOUSE, BY_SERVINGS);
-  const pasta = plan.entries.filter((e) => e.recipeId === 'chipotle-pasta');
-  const peas = plan.entries.filter((e) => e.recipeId === 'marry-me-chickpeas');
+  const plan = buildPlan(lib, { start: START, days: 30, house: HOUSE, prefs: {}, seed: 7 });
+  const on = (id: string) => plan.entries.filter((e) => e.recipeId === id);
+  check('month plan has tacos 4 times', on('tacos').length === 4, String(on('tacos').length));
+  check('month plan has lasagna once', on('lasagna').length === 1, String(on('lasagna').length));
+  check('month plan has chili twice', on('chili').length === 2, String(on('chili').length));
+  const t = on('tacos').map((e) => e.date);
+  check('weekly tacos are spread about a week apart',
+    t.every((d, i) => i === 0 || Math.abs(daysBetween(t[i - 1], d) - 7.5) <= 2), t.join(' '));
+  check('rhythm entries say so', on('tacos').every((e) => e.reason === 'rhythm'));
 
-  check('pasta lands 3 times in 90 days', pasta.length === 3, `got ${pasta.length}`);
-  check('chickpeas land once in 90 days', peas.length === 1, `got ${peas.length}`);
-  check('pasta starts when it comes due', pasta[0].date === '2026-10-01', pasta[0].date);
-  check(
-    'pasta repeats about a month apart',
-    pasta.every((e, i) => i === 0 || Math.abs(daysBetween(pasta[i - 1].date, e.date) - 30) <= 1),
-    pasta.map((e) => e.date).join(' ')
-  );
-  check('the rest of the days are left open', plan.openDates.length === 90 - 4, String(plan.openDates.length));
-  check('each cooking feeds dinner and lunch', pasta[0].dinnerServings === 2.5 && pasta[0].lunchServings === 5.5,
-    `${pasta[0].dinnerServings} / ${pasta[0].lunchServings}`);
+  // Ten never-made monthly recipes must not pile into the first ten days.
+  const many = Array.from({ length: 10 }, (_, i) => recipe({ id: `m${i}`, cadenceDays: 30 }));
+  const spread = buildPlan([...LIBRARY, ...many], { start: START, days: 30, house: HOUSE, prefs: {}, seed: 3 });
+  const late = spread.entries.filter((e) => e.recipeId.startsWith('m') && daysBetween(START, e.date) >= 10);
+  check('new monthly recipes spread across the month', late.length >= 3, `${late.length} after day 10`);
 }
 
+console.log('\n════════ filling every day ════════\n');
 {
-  const never = planCadence(
-    [recipe({ id: 'new-thing', cadenceDays: 30, lastMade: null })],
-    '2026-10-01', 60, HOUSE, BY_SERVINGS
-  );
-  check('a never-made recipe starts on day one', never.entries[0]?.date === '2026-10-01', never.entries[0]?.date);
-  check('and then keeps its rhythm', never.entries.length === 2, `got ${never.entries.length}`);
+  for (const days of [7, 14, 30]) {
+    const plan = buildPlan(LIBRARY, { start: START, days, house: HOUSE, prefs: {}, seed: 11 });
+    check(`${days}-day plan is full`, plan.entries.length === days && plan.openDates.length === 0,
+      `${plan.entries.length} planned, ${plan.openDates.length} open`);
+  }
+
+  const plan = buildPlan(LIBRARY, { start: START, days: 30, house: HOUSE, prefs: {}, seed: 5 });
+  const byId = new Map(LIBRARY.map((r) => [r.id, r]));
+  let sameProteinRuns = 0;
+  for (let i = 1; i < plan.entries.length; i++) {
+    if (byId.get(plan.entries[i].recipeId)!.kinds[0] === byId.get(plan.entries[i - 1].recipeId)!.kinds[0]) sameProteinRuns++;
+  }
+  check('rarely the same protein two nights running', sameProteinRuns <= 3, `${sameProteinRuns} times`);
+
+  const gap = repeatGap(LIBRARY.length);
+  const repeatsTooSoon = plan.entries.some((e, i) =>
+    plan.entries.some((f, j) => j > i && f.recipeId === e.recipeId && daysBetween(e.date, f.date) < gap));
+  check(`no recipe repeats inside ${gap} days`, !repeatsTooSoon);
+
+  // A tiny library still fills the month, by repeating.
+  const tiny = [recipe({ id: 'a' }), recipe({ id: 'b' }), recipe({ id: 'c' })];
+  const t = buildPlan(tiny, { start: START, days: 30, house: HOUSE, prefs: {}, seed: 2 });
+  check('three recipes still fill a month', t.openDates.length === 0, String(t.openDates.length));
+  check('and never the same one two nights running',
+    t.entries.every((e, i) => i === 0 || e.recipeId !== t.entries[i - 1].recipeId));
+
+  const none = buildPlan([], { start: START, days: 7, house: HOUSE, prefs: {}, seed: 1 });
+  check('an empty library leaves the days open', none.openDates.length === 7);
+
+  const a = buildPlan(LIBRARY, { start: START, days: 14, house: HOUSE, prefs: {}, seed: 42 });
+  const b = buildPlan(LIBRARY, { start: START, days: 14, house: HOUSE, prefs: {}, seed: 42 });
+  const c = buildPlan(LIBRARY, { start: START, days: 14, house: HOUSE, prefs: {}, seed: 43 });
+  const ids = (p: typeof a) => p.entries.map((e) => e.recipeId).join();
+  check('same seed, same plan', ids(a) === ids(b));
+  check('a new seed shuffles', ids(a) !== ids(c));
+
+  const poor = [...LIBRARY, recipe({ id: 'bad', rating: 2 })];
+  const p = buildPlan(poor, { start: START, days: 30, house: HOUSE, prefs: {}, seed: 9 });
+  check('a recipe rated 2 is never picked', !p.entries.some((e) => e.recipeId === 'bad'));
 }
 
+console.log('\n════════ preferences ════════\n');
 {
-  // A monthly recipe two months late has missed two turns; a quarterly one two
-  // months late has not missed any.
-  const monthly = recipe({ id: 'm', cadenceDays: 30, lastMade: '2026-08-01' });
-  const quarterly = recipe({ id: 'q', cadenceDays: 90, lastMade: '2026-08-01' });
-  check('the monthly recipe is more overdue', urgency(monthly, '2026-10-01') > urgency(quarterly, '2026-10-01'),
-    `${urgency(monthly, '2026-10-01')} vs ${urgency(quarterly, '2026-10-01')}`);
+  const noPork: Prefs = { Pork: 'skip' };
+  const p = buildPlan(LIBRARY, { start: START, days: 30, house: HOUSE, prefs: noPork, seed: 4 });
+  const byId = new Map(LIBRARY.map((r) => [r.id, r]));
+  check('skip pork means no pork', !p.entries.some((e) => byId.get(e.recipeId)!.kinds.includes('Pork')));
+  check('and the month is still full', p.openDates.length === 0);
+
+  let base = 0;
+  let more = 0;
+  for (let s = 0; s < 20; s++) {
+    const count = (prefs: Prefs) => buildPlan(LIBRARY, { start: START, days: 30, house: HOUSE, prefs, seed: s })
+      .entries.filter((e) => byId.get(e.recipeId)!.kinds.includes('Chicken')).length;
+    base += count({});
+    more += count({ Chicken: 'more' });
+  }
+  check('"more chicken" means more chicken', more > base * 1.2, `${base / 20} → ${more / 20} a month`);
+
+  // Kept days survive a rebuild.
+  const first = buildPlan(LIBRARY, { start: START, days: 7, house: HOUSE, prefs: {}, seed: 1 });
+  const chosen = setDay(first, addDays(START, 2), LIBRARY[19], HOUSE);
+  const kept = chosen.entries.filter((e) => e.locked);
+  const again = buildPlan(LIBRARY, { start: START, days: 7, house: HOUSE, prefs: {}, seed: 99, keep: kept });
+  check('a chosen day is locked', kept.length === 1 && kept[0].recipeId === 'r19');
+  check('and survives a shuffle', again.entries.find((e) => e.date === addDays(START, 2))?.recipeId === 'r19');
+
+  const swapped = swapDay(first, START, LIBRARY, {}, HOUSE, 5);
+  check('swap changes the recipe', swapped.entries[0].recipeId !== first.entries[0].recipeId);
+  check('swap keeps the day filled', swapped.entries.length === 7);
+
+  const cleared = clearDay(first, START);
+  check('clear opens the day', cleared.openDates.includes(START) && cleared.entries.length === 6);
+
+  const s = summarise(first);
+  check('summary counts the days', s.planned === 7 && s.open === 0);
 }
 
+console.log('\n════════ meal kinds ════════\n');
 {
-  // Everything due at once, on a plan with fewer days than recipes.
-  const many = Array.from({ length: 10 }, (_, i) =>
-    recipe({ id: `r${i}`, cadenceDays: 30, lastMade: '2026-01-01' })
-  );
-  const plan = planCadence(many, '2026-10-01', 5, HOUSE, BY_SERVINGS);
-  check('never plans more days than it has', plan.entries.length === 5, `got ${plan.entries.length}`);
-  check('one recipe per day', new Set(plan.entries.map((e) => e.date)).size === 5);
-  check('and no day is left both open and taken', plan.openDates.length === 0);
-}
-
-console.log('\n════════ filling the gaps ════════\n');
-{
-  const library = [
-    recipe({ id: 'loved', rating: 9, lastMade: '2026-05-01' }),
-    recipe({ id: 'liked', rating: 7, lastMade: '2026-06-01' }),
-    recipe({ id: 'meh', rating: 3, lastMade: '2026-07-01' }),
-    recipe({ id: 'untried-good', rating: 8, lastMade: null }),
-    recipe({ id: 'untried-poor', rating: 2, lastMade: null }),
-  ];
-  const empty = planCadence([], '2026-10-01', 7, HOUSE, BY_SERVINGS);
-  check('nothing planned without a cadence', empty.entries.length === 0);
-  check('all 7 days open', empty.openDates.length === 7);
-
-  const filled = fillOpenDates(
-    empty, library,
-    { ...DEFAULT_FILL, fromLibrary: 2, neverTried: 1, minRating: 5 },
-    HOUSE, BY_SERVINGS
-  );
-  check('fills exactly what was asked for', filled.entries.length === 3, `got ${filled.entries.length}`);
-  check('leaves the rest open', filled.openDates.length === 4, `got ${filled.openDates.length}`);
-  check('respects the rating floor', !filled.entries.some((e) => /meh|poor/.test(e.recipeId)),
-    filled.entries.map((e) => e.recipeId).join(' '));
-  check('takes the best-rated first', filled.entries.some((e) => e.recipeId === 'loved'),
-    filled.entries.map((e) => e.recipeId).join(' '));
-  check('includes an untried one', filled.entries.some((e) => e.recipeId === 'untried-good'),
-    filled.entries.map((e) => e.recipeId).join(' '));
-  check('entries stay in date order',
-    filled.entries.every((e, i) => i === 0 || e.date >= filled.entries[i - 1].date));
-}
-
-{
-  // A filler must not land beside the same recipe placed by cadence.
-  const r = recipe({ id: 'pasta', cadenceDays: 30, lastMade: '2026-09-30', rating: 10 });
-  const plan = planCadence([r], '2026-10-01', 7, HOUSE, BY_SERVINGS);
-  const filled = fillOpenDates(plan, [r], { ...DEFAULT_FILL, fromLibrary: 5, minGapDays: 14 }, HOUSE, BY_SERVINGS);
-  const pasta = filled.entries.filter((e) => e.recipeId === 'pasta');
-  check('the same recipe is not repeated inside the gap', pasta.length === 1, `got ${pasta.length}`);
-}
-
-console.log('\n════════ summary ════════\n');
-{
-  const recipes = [
-    recipe({ id: 'a', cadenceDays: 7, lastMade: '2026-09-30', servings: 4 }),
-    recipe({ id: 'b', cadenceDays: 14, lastMade: '2026-09-30', servings: 6 }),
-  ];
-  const plan = planCadence(recipes, '2026-10-01', 28, HOUSE, BY_SERVINGS);
-  const s = summarise(plan, 28);
-  check('counts the days', s.days === 28);
-  check('planned plus open is every day', s.planned + s.open === 28, `${s.planned} + ${s.open}`);
-  check('two distinct recipes', s.distinctRecipes === 2, String(s.distinctRecipes));
-  check('a 4-serving recipe is cooked twice a night', plan.entries.filter((e) => e.recipeId === 'a')[0].batches === 2);
-  check('a 6-serving recipe once', plan.entries.filter((e) => e.recipeId === 'b')[0].batches === 1);
-  check('lunches are counted', s.lunchesCovered > 0, String(s.lunchesCovered));
-}
-
-console.log('\n════════ dates ════════\n');
-{
-  check('adds days across a month end', addDays('2026-10-31', 1) === '2026-11-01', addDays('2026-10-31', 1));
-  check('adds days across a year end', addDays('2026-12-31', 1) === '2027-01-01', addDays('2026-12-31', 1));
-  check('counts days between', daysBetween('2026-10-01', '2026-10-31') === 30, String(daysBetween('2026-10-01', '2026-10-31')));
-  check('handles a leap day', addDays('2028-02-28', 1) === '2028-02-29', addDays('2028-02-28', 1));
-  // A year-long plan is the longest horizon offered, so it has to hold up.
-  check('a year of dates is a year long', daysBetween('2026-10-01', addDays('2026-10-01', 364)) === 364);
+  const k = (name: string, ingredients: string[] = [], tags: string[] = [], minutes: number | null = null) =>
+    inferKinds({ name, ingredients, tags, minutes });
+  check('chicken from the name', k('Chicken tortilla soup').includes('Chicken'));
+  check('and it is a soup', k('Chicken tortilla soup').includes('Soup & stew'));
+  check('name beats garnish', !k('Chicken tortilla soup', ['4 slices bacon']).includes('Pork'));
+  check('protein from ingredients', k('Weeknight skillet', ['1 lb ground beef', '1 onion']).includes('Beef'));
+  check('chicken stock is not chicken',
+    k('Lentil soup', ['1 cup lentils', '4 cups chicken stock']).includes('Vegetarian'));
+  check('no meat is vegetarian', k('Mushroom risotto', ['arborio rice', 'mushrooms']).join() === 'Vegetarian,Bowls & rice',
+    k('Mushroom risotto', ['arborio rice', 'mushrooms']).join());
+  check('no ingredients is not guessed vegetarian', !k('Mystery dish').includes('Vegetarian'));
+  check('pasta', k('Spaghetti carbonara', ['pancetta']).includes('Pasta'));
+  check('tacos', k('Fish tacos').includes('Tacos & Mexican') && k('Fish tacos').includes('Seafood'));
+  check('quick by time', k('Eggs', ['eggs'], [], 20).includes('Quick'));
+  check('quick by tag', k('Eggs', ['eggs'], ['Quick']).includes('Quick'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -172,31 +172,41 @@ Other things the fixtures caught:
 
 ## Meal planning
 
-`lib/planner.ts` is pure and tested (`node --experimental-strip-types
-planner.test.mts`, 44 assertions). `app/plan.tsx` is the flow.
+`lib/planner.ts` + `lib/kinds.ts` are pure and tested (`node
+--experimental-strip-types planner.test.mts`, 54 assertions). `app/plan.tsx`
+is the flow: setup → review (swap / choose / keep / clear any night, shuffle
+the rest) → **one button saves the plan and makes the grocery list**.
 
-**Cadence is the whole input.** A recipe carries `cadence_days` — "monthly",
-"every 3 months" — and `last_made_at`. It becomes *due* at `lastMade + cadence`.
-A recipe without a cadence is only ever filler.
+The brief, in the user's words: build a week, 2 weeks or a month; 2.5 servings
+a meal (two adults and a one-year-old) plus lunch leftovers every day, so at
+least 5 servings a night, a bit more is fine; a recipe marked monthly must be
+in the monthly plan; preferences for what kind of meals, or "do it for me".
 
-- **Urgency is measured in cadence-lengths, not days.** A monthly recipe two
-  months late has missed two turns; a quarterly one two months late has missed
-  none. Sorting by raw days overdue lets rare recipes crowd out frequent ones.
-- **`planCadence` deliberately does not fill the gaps.** It reports open dates
-  and stops. Being asked what to do with them is the feature — a planner that
-  silently fills a month with whatever it found is one nobody trusts.
-- **A child is a fraction of an adult portion** (`kidFactor`, 0.5). Counting a
-  five-year-old as a whole serving buys a third too much food every day.
-- **Each dinner is scaled to cover that night plus next-day lunches**, then
-  rounded up to whole batches — half a recipe is not a thing you can cook.
-  `batchesFor` allows a 0.02 whisker so 4.01 servings of a 4-serving recipe is
-  one batch, not two.
-- **A missing calorie figure falls back to servings.** Planning by calories
-  with `kcal = null` would otherwise quietly cook one portion for a family.
-- **Fillers respect a minimum gap** against the whole plan, cadence entries
-  included, so a filler never lands beside the same recipe twice.
-- `replacePlan` is scoped to a date range: rebuilding next month must not wipe
-  this week's plan, which may already be shopped for.
+- **Every day is filled.** The earlier version left non-cadence days open and
+  asked what to do with them via counters. That was the thing that was not
+  understood — the user wants a finished plan to check, not a questionnaire.
+  A night is left open only when the library cannot fill it.
+- **Cadence is a count, not a due date.** `timesInPlan`: as many whole
+  cadences as fit (monthly = 1 in a month, weekly = 4, every 2 weeks = 2),
+  *regardless of last made*. Only a rhythm longer than the plan is gated on
+  being due. Spread evenly, never-made ones at a random offset so they do not
+  pile into the first days.
+- **Servings: `perMeal` × (leftovers ? 2 : 1)**, default 2.5 and on → 5.
+  Scaled in **half-batch steps** (`scaleFor`): a 4-serving recipe is 1.5× = 6,
+  not doubled to 8.
+- **Meal kinds are inferred** (`inferKinds`) from name, ingredients, tags and
+  minutes — nobody tags recipes. Name beats ingredients; broth/stock lines are
+  ignored; no ingredients means unknown, not vegetarian.
+- Preference chips cycle none → more (×3 weight) → skip (excluded).
+- Picking: rating (≤3 never), favourite ×1.5, same protein as a neighbouring
+  night ×0.3, rhythm recipes ×0.05 as fillers, repeat gap
+  `min(14, pool - 1)` relaxed only if the library is too small. Seeded RNG, so
+  Shuffle is a new seed and tests are deterministic. Locked entries survive.
+- **`last_made_at` is set by `markPastPlanMade`** on opening Plan — nothing
+  else ever set it, so every rhythm used to act as never-made.
+- The saved plan lives in `plan_current` (settings) and reopens in review.
+  `replacePlan` is scoped to the plan's range; `plan_range` tells Groceries
+  what to cover.
 
 ## Finding new recipes — `lib/discover.ts`, `app/discover.tsx`
 
@@ -229,7 +239,11 @@ Re-probe before adding one. Other things this cost:
 - Failures are normal, not errors: a round-up post has no recipe markup. It
   tries `count * 4` candidates and only speaks up if nothing worked.
 
-## Groceries — `app/groceries.tsx`
+## Groceries — `app/groceries.tsx`, `lib/shop.ts`
+
+Plan → list lives in `lib/shop.ts` because two screens have the button. A plan
+longer than a week offers "Whole plan / Week 1 / Week 2…" chips — a month of
+produce bought on day one does not last.
 
 Built from a **selection of recipes** kept in `grocery_recipes`, seeded from
 the plan but stored separately. Shopping decisions are not planning decisions:

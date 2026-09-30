@@ -1,19 +1,31 @@
 /**
- * Build a dinner plan from a library of recipes.
+ * Build a dinner plan — a week, two weeks or a month — from the library.
  *
- * Two ideas drive it, and they pull in opposite directions:
+ * The rules, in the order they are applied:
  *
- *   - **Cadence.** A recipe can be marked "about once a month" or "every three
- *     months". Those are not rules to obey exactly; they are a rhythm. A
- *     recipe becomes *due* at `lastMade + cadence` and gets more insistent the
- *     longer it waits, so nothing is ever silently dropped.
- *   - **Everything else is filler.** The days a cadence recipe does not claim
- *     get filled from the library, or left open on purpose so the cook can
- *     choose. The planner reports what it could not fill rather than quietly
- *     inventing something.
+ *   1. **Kept days stay.** Anything picked by hand or locked survives a
+ *      shuffle, so the plan can be argued with one day at a time.
+ *   2. **Rhythms are a promise.** A recipe marked "monthly" is in every
+ *      monthly plan, a weekly one lands four times in a month, and so on —
+ *      spread across the plan rather than bunched at the start. A rhythm
+ *      longer than the plan only claims a day when it comes due inside it.
+ *   3. **Every other day is filled**, from preferences ("more chicken, no
+ *      pork") or from nothing at all. The previous version deliberately left
+ *      days open and asked what to do with them; nobody wanted to be asked.
+ *      A day is only left open when the library genuinely cannot fill it.
+ *
+ * Every dinner cooks enough for that night and, when leftovers are on, the
+ * next day's lunch — scaled in half-batch steps, because 1.5x a recipe is a
+ * normal thing to cook and doubling a 4-serving recipe to feed 5 is not.
  *
  * Pure and dateless beyond ISO strings, so it can be tested in node.
  */
+
+import type { MealKind } from './kinds';
+
+/** What is in the middle of the plate — two nights running is what to avoid. */
+const PROTEINS: MealKind[] = ['Chicken', 'Beef', 'Pork', 'Seafood', 'Vegetarian'];
+const mainProtein = (kinds: MealKind[]) => kinds.find((k) => PROTEINS.includes(k)) ?? null;
 
 export type Cadence = number | null; // days between cookings; null = no rhythm
 
@@ -22,48 +34,43 @@ export type PlanRecipe = {
   name: string;
   /** Servings the recipe yields as written. */
   servings: number;
-  /** Calories per serving, when known. */
-  kcal: number | null;
   /** Out of ten, matching the library. */
   rating: number | null;
+  favorite: boolean;
   cadenceDays: Cadence;
   /** ISO date it was last cooked, or null for never. */
   lastMade: string | null;
+  kinds: MealKind[];
 };
 
 export type Household = {
-  adults: number;
-  kids: number;
-  /** A child eats this share of an adult portion. */
-  kidFactor: number;
-  /** How many people take leftovers for lunch the next day. 0 turns it off. */
-  lunchPeople: number;
+  /** Servings eaten at one meal. Two adults and a toddler is 2.5. */
+  perMeal: number;
+  /** Cook enough at dinner to cover the next day's lunch as well. */
+  leftoverLunch: boolean;
 };
 
-export type Targets = {
-  basis: 'servings' | 'calories';
-  /** basis 'calories': what one adult eats at dinner, and at lunch. */
-  adultDinnerKcal: number;
-  adultLunchKcal: number;
-};
+/** Per kind: lean towards it, or leave it out. Absent means no opinion. */
+export type Prefs = Partial<Record<MealKind, 'more' | 'skip'>>;
 
 export type PlanEntry = {
   date: string;
   recipeId: string;
   name: string;
-  /** How many times the recipe is made that night. */
-  batches: number;
+  /** How much of the recipe is cooked: 1, 1.5, 2… */
+  scale: number;
   servingsMade: number;
-  /** Servings eaten at dinner; the rest is lunch. */
-  dinnerServings: number;
-  lunchServings: number;
   /** Why it landed here — shown so the plan can be argued with. */
-  reason: 'due' | 'rhythm' | 'filler';
+  reason: 'rhythm' | 'pick' | 'chosen';
+  /** Kept through a shuffle. Anything chosen by hand is locked. */
+  locked: boolean;
 };
 
-export type PlanResult = {
+export type Plan = {
+  start: string;
+  days: number;
   entries: PlanEntry[];
-  /** Dates with nothing on them. */
+  /** Dates nothing could fill. */
   openDates: string[];
 };
 
@@ -101,231 +108,283 @@ export function datesFrom(start: string, days: number): string[] {
 
 /* ── how much to cook ───────────────────────────────────────── */
 
+/** Servings one dinner has to yield: tonight, plus tomorrow's lunch. */
+export function servingsPerCook(house: Household): number {
+  return house.perMeal * (house.leftoverLunch ? 2 : 1);
+}
+
 /**
- * Servings one cooking has to yield.
+ * How much of a recipe to cook, in half-batch steps, never under the need.
  *
- * Dinner for the household, plus lunch the next day for whoever takes it. A
- * child is counted as a fraction of an adult rather than a whole portion,
- * because planning three adult servings for two adults and a five-year-old
- * buys about a third too much food every single day.
+ * A 0.02 whisker so 4.01 servings of a 4-serving recipe is one batch, not
+ * one and a half.
  */
-export function servingsNeeded(
-  house: Household,
-  targets: Targets,
-  recipe: Pick<PlanRecipe, 'kcal'>
-): { dinner: number; lunch: number; total: number } {
-  const eaters = house.adults + house.kids * house.kidFactor;
-
-  if (targets.basis === 'calories' && recipe.kcal && recipe.kcal > 0) {
-    const dinnerKcal = targets.adultDinnerKcal * eaters;
-    const lunchKcal = targets.adultLunchKcal * house.lunchPeople;
-    return {
-      dinner: dinnerKcal / recipe.kcal,
-      lunch: lunchKcal / recipe.kcal,
-      total: (dinnerKcal + lunchKcal) / recipe.kcal,
-    };
-  }
-
-  // By servings — also the fallback when a recipe has no calorie figure, since
-  // a missing number must not quietly plan a single portion for a family.
-  return { dinner: eaters, lunch: house.lunchPeople, total: eaters + house.lunchPeople };
-}
-
-/** Whole batches, because half a recipe is not a thing you can cook. */
-export function batchesFor(need: number, recipeServings: number): number {
+export function scaleFor(need: number, recipeServings: number): number {
   if (recipeServings <= 0) return 1;
-  return Math.max(1, Math.ceil(need / recipeServings - 0.02)); // 0.02: 4.01 servings of a 4-serving recipe is one batch
+  return Math.max(1, Math.ceil((need / recipeServings - 0.02) * 2) / 2);
 }
 
-function entryFor(
-  date: string,
-  recipe: PlanRecipe,
-  house: Household,
-  targets: Targets,
-  reason: PlanEntry['reason']
-): PlanEntry {
-  const need = servingsNeeded(house, targets, recipe);
-  const batches = batchesFor(need.total, recipe.servings);
-  const made = batches * recipe.servings;
-  const dinner = Math.min(made, need.dinner);
+function entryFor(date: string, r: PlanRecipe, house: Household, reason: PlanEntry['reason'], locked = false): PlanEntry {
+  const scale = scaleFor(servingsPerCook(house), r.servings);
   return {
-    date,
-    recipeId: recipe.id,
-    name: recipe.name,
-    batches,
-    servingsMade: round(made),
-    dinnerServings: round(dinner),
-    lunchServings: round(made - dinner),
-    reason,
+    date, recipeId: r.id, name: r.name, scale,
+    servingsMade: round(scale * r.servings),
+    reason, locked,
   };
 }
 
 const round = (n: number) => Math.round(n * 10) / 10;
 
-/* ── scheduling ─────────────────────────────────────────────── */
+/* ── randomness ─────────────────────────────────────────────── */
 
 /**
- * How overdue a recipe is on the first day of the plan, in cadence-lengths.
- *
- * Expressed as a multiple of its own cadence so a monthly recipe two months
- * late outranks a quarterly one two months late — the monthly one has missed
- * twice as many turns.
+ * Seeded, so the same seed gives the same plan — which is what makes tests
+ * possible and "Shuffle" meaningful.
  */
-export function urgency(recipe: PlanRecipe, on: string): number {
-  if (!recipe.cadenceDays || recipe.cadenceDays <= 0) return 0;
-  if (!recipe.lastMade) return 1; // never made: due once, not infinitely overdue
-  return daysBetween(recipe.lastMade, on) / recipe.cadenceDays;
+export function rng(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
+/* ── rhythms ────────────────────────────────────────────────── */
+
 /**
- * Place the recipes that have a rhythm, then report what is left.
+ * How many times a recipe with a rhythm belongs in a plan of this length.
  *
- * Deliberately does **not** fill the gaps. The cook is asked what to do with
- * them — that conversation is the point of the feature, and a planner that
- * silently fills a month with whatever it found is one nobody trusts.
+ * As many whole cadences as fit, with a little slack so a 30-day "monthly"
+ * fits a 30-day plan and a weekly one lands 4 times, not 4.3. A rhythm longer
+ * than the plan gets one turn only if it comes due inside the plan — a monthly
+ * recipe does not belong in every single week.
  */
-export function planCadence(
-  recipes: PlanRecipe[],
-  start: string,
-  days: number,
-  house: Household,
-  targets: Targets
-): PlanResult {
-  const dates = datesFrom(start, days);
-  const taken = new Map<string, PlanEntry>();
+export function timesInPlan(r: PlanRecipe, start: string, days: number): number {
+  const cad = r.cadenceDays;
+  if (!cad || cad <= 0) return 0;
+  const whole = Math.floor(days / cad + 0.1);
+  if (whole >= 1) return whole;
+  if (!r.lastMade) return 1;
+  const due = addDays(r.lastMade, cad);
+  return daysBetween(due, addDays(start, days - 1)) >= 0 ? 1 : 0;
+}
 
-  // Most overdue first, so a scarce early slot goes to the recipe that has
-  // waited longest relative to its own rhythm.
-  const withRhythm = recipes
-    .filter((r) => r.cadenceDays && r.cadenceDays > 0)
-    .map((r) => ({ r, u: urgency(r, start) }))
-    .sort((a, b) => b.u - a.u);
-
-  for (const { r } of withRhythm) {
-    const cadence = r.cadenceDays as number;
-
-    // First due date: when it next comes round, or day one if already overdue.
-    let due = r.lastMade ? addDays(r.lastMade, cadence) : start;
-    if (daysBetween(start, due) < 0) due = start;
-
-    while (daysBetween(due, dates[dates.length - 1]) >= 0) {
-      const slot = nextFree(dates, taken, due);
-      if (!slot) break;
-      taken.set(slot, entryFor(slot, r, house, targets, slot === due ? 'due' : 'rhythm'));
-      due = addDays(slot, cadence);
+/** The free date nearest `target`, searching outwards both ways. */
+function nearestFree(dates: string[], taken: Map<string, PlanEntry>, target: number): string | null {
+  for (let d = 0; d < dates.length; d++) {
+    for (const i of [target + d, target - d]) {
+      if (i >= 0 && i < dates.length && !taken.has(dates[i])) return dates[i];
     }
-  }
-
-  const entries = dates.filter((d) => taken.has(d)).map((d) => taken.get(d)!);
-  return { entries, openDates: dates.filter((d) => !taken.has(d)) };
-}
-
-/** The first free date on or after `from`, or null if the plan is full. */
-function nextFree(dates: string[], taken: Map<string, PlanEntry>, from: string): string | null {
-  for (const d of dates) {
-    if (daysBetween(from, d) >= 0 && !taken.has(d)) return d;
   }
   return null;
 }
 
-/* ── filling the gaps ───────────────────────────────────────── */
+/* ── filling ────────────────────────────────────────────────── */
 
-export type FillOptions = {
-  /** Recipes already cooked before, worth repeating. */
-  fromLibrary: number;
-  /** Recipes in the library never cooked yet. */
-  neverTried: number;
-  /** Only consider recipes at or above this rating, out of ten. */
-  minRating: number | null;
-  /** Days that must pass before the same recipe comes round again. */
-  minGapDays: number;
-};
-
-export const DEFAULT_FILL: FillOptions = {
-  fromLibrary: 0,
-  neverTried: 0,
-  minRating: null,
-  minGapDays: 14,
-};
-
-/**
- * Fill open dates from the library.
- *
- * Takes the plan as it stands so a filler cannot land next to the same recipe
- * placed by cadence — repeating a meal two days running is the fastest way to
- * make a plan feel automated rather than thought about.
- */
-export function fillOpenDates(
-  plan: PlanResult,
-  recipes: PlanRecipe[],
-  opts: FillOptions,
-  house: Household,
-  targets: Targets
-): PlanResult {
-  const entries = [...plan.entries];
-  const open = [...plan.openDates];
-  const placed: string[] = [];
-
-  const eligible = (r: PlanRecipe) =>
-    opts.minRating == null || (r.rating ?? 0) >= opts.minRating;
-
-  const tried = recipes.filter((r) => r.lastMade && eligible(r));
-  const untried = recipes.filter((r) => !r.lastMade && eligible(r));
-
-  // Best-rated first within each bucket; a tie goes to whatever has waited
-  // longest, so the list rotates instead of favouring the same few.
-  const byAppeal = (a: PlanRecipe, b: PlanRecipe) =>
-    (b.rating ?? 0) - (a.rating ?? 0) ||
-    (a.lastMade ?? '').localeCompare(b.lastMade ?? '');
-
-  const queue: { r: PlanRecipe; reason: PlanEntry['reason'] }[] = [
-    ...tried.sort(byAppeal).slice(0, opts.fromLibrary).map((r) => ({ r, reason: 'filler' as const })),
-    ...untried.sort(byAppeal).slice(0, opts.neverTried).map((r) => ({ r, reason: 'filler' as const })),
-  ];
-
-  const stillOpen: string[] = [];
-  for (const date of open) {
-    const pick = queue.findIndex(({ r }) => !tooClose(entries, r.id, date, opts.minGapDays));
-    if (pick === -1) {
-      stillOpen.push(date);
-      continue;
-    }
-    const { r, reason } = queue.splice(pick, 1)[0];
-    entries.push(entryFor(date, r, house, targets, reason));
-    placed.push(date);
-  }
-
-  entries.sort((a, b) => a.date.localeCompare(b.date));
-  return { entries, openDates: stillOpen };
+/** Recipes the planner is allowed to reach for, given preferences. */
+export function eligible(recipes: PlanRecipe[], prefs: Prefs): PlanRecipe[] {
+  return recipes.filter(
+    (r) => (r.rating == null || r.rating > 3) && !r.kinds.some((k) => prefs[k] === 'skip')
+  );
 }
 
-function tooClose(entries: PlanEntry[], recipeId: string, date: string, gap: number): boolean {
-  return entries.some(
-    (e) => e.recipeId === recipeId && Math.abs(daysBetween(e.date, date)) < gap
-  );
+/**
+ * How appealing a recipe is for one date, before variety and repeats.
+ * Rating, favourite and preferences multiply, so "more chicken" makes chicken
+ * about three times as likely without making anything else impossible.
+ */
+function appeal(r: PlanRecipe, prefs: Prefs): number {
+  let w = (r.rating ?? 7) / 10;
+  if (r.favorite) w *= 1.5;
+  if (r.kinds.some((k) => prefs[k] === 'more')) w *= 3;
+  return w;
+}
+
+/** Days to the nearest other night this recipe is on, or Infinity. */
+function distanceToSame(entries: Map<string, PlanEntry>, recipeId: string, date: string): number {
+  let best = Infinity;
+  for (const e of entries.values()) {
+    if (e.recipeId === recipeId && e.date !== date) best = Math.min(best, Math.abs(daysBetween(e.date, date)));
+  }
+  return best;
+}
+
+/**
+ * Score every candidate for one date. Exported so "Swap" can offer the next
+ * best thing rather than something random.
+ */
+export function candidatesFor(
+  date: string,
+  plan: Map<string, PlanEntry>,
+  recipes: PlanRecipe[],
+  prefs: Prefs,
+  minGap: number
+): { r: PlanRecipe; score: number }[] {
+  const byId = new Map(recipes.map((r) => [r.id, r]));
+  const neighbour = (n: number) => {
+    const e = plan.get(addDays(date, n));
+    return e ? mainProtein(byId.get(e.recipeId)?.kinds ?? []) : null;
+  };
+  const around = [neighbour(-1), neighbour(1)];
+
+  return eligible(recipes, prefs)
+    .map((r) => {
+      const gap = distanceToSame(plan, r.id, date);
+      if (gap < minGap) return { r, score: 0 };
+      let score = appeal(r, prefs);
+      // Chicken two nights running is the quickest way to make a plan feel
+      // generated. Not forbidden — a chicken-only library still plans.
+      const p = mainProtein(r.kinds);
+      if (p && around.includes(p)) score *= 0.3;
+      // Rhythm recipes already have their turns; only reach for them again
+      // when there is nothing else.
+      if (r.cadenceDays) score *= 0.05;
+      // Longer since it was last on the plan, the better — rotates the library.
+      if (gap !== Infinity) score *= Math.min(1, gap / 21) + 0.3;
+      return { r, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+}
+
+/**
+ * Days before the same recipe may come round again: two weeks, unless the
+ * library is too small for that, in which case as long as it allows.
+ */
+export function repeatGap(pool: number): number {
+  return Math.max(1, Math.min(14, pool - 1));
+}
+
+/* ── the build ──────────────────────────────────────────────── */
+
+export type BuildOptions = {
+  start: string;
+  days: number;
+  house: Household;
+  prefs: Prefs;
+  seed: number;
+  /** Entries to keep exactly where they are. */
+  keep?: PlanEntry[];
+};
+
+export function buildPlan(recipes: PlanRecipe[], o: BuildOptions): Plan {
+  const dates = datesFrom(o.start, o.days);
+  const inRange = new Set(dates);
+  const taken = new Map<string, PlanEntry>();
+  const rand = rng(o.seed);
+
+  for (const e of o.keep ?? []) if (inRange.has(e.date)) taken.set(e.date, e);
+
+  // Rhythms, most frequent first: a weekly recipe has the least room to move.
+  const withRhythm = recipes
+    .filter((r) => r.cadenceDays && r.cadenceDays > 0)
+    .sort((a, b) => (a.cadenceDays as number) - (b.cadenceDays as number));
+
+  for (const r of withRhythm) {
+    const already = [...taken.values()].filter((e) => e.recipeId === r.id).length;
+    const n = timesInPlan(r, o.start, o.days) - already;
+    if (n <= 0) continue;
+    const interval = o.days / n;
+
+    // Start where it next comes due, or somewhere in the first interval when
+    // it has never been made, so ten new monthly recipes do not all pile
+    // into the first ten days.
+    let first = r.lastMade ? daysBetween(o.start, addDays(r.lastMade, r.cadenceDays as number)) : -1;
+    if (first < 0 || first >= interval) first = Math.floor(rand() * interval);
+
+    for (let i = 0; i < n; i++) {
+      const slot = nearestFree(dates, taken, Math.round(first + i * interval));
+      if (!slot) break;
+      taken.set(slot, entryFor(slot, r, o.house, 'rhythm'));
+    }
+  }
+
+  // Everything else, day by day.
+  const pool = eligible(recipes, o.prefs);
+  const openDates: string[] = [];
+  for (const date of dates) {
+    if (taken.has(date)) continue;
+    const pick = choose(date, taken, recipes, o.prefs, repeatGap(pool.length), rand);
+    if (pick) taken.set(date, entryFor(date, pick, o.house, 'pick'));
+    else openDates.push(date);
+  }
+
+  return {
+    start: o.start,
+    days: o.days,
+    entries: dates.filter((d) => taken.has(d)).map((d) => taken.get(d)!),
+    openDates,
+  };
+}
+
+/**
+ * Weighted random among the best few, relaxing the repeat gap if the library
+ * is too small to honour it. Picking only from the top keeps a 2★ recipe
+ * from turning up just because the dice said so.
+ */
+function choose(
+  date: string,
+  taken: Map<string, PlanEntry>,
+  recipes: PlanRecipe[],
+  prefs: Prefs,
+  gap: number,
+  rand: () => number
+): PlanRecipe | null {
+  for (let g = gap; g >= 1; g = g > 1 ? Math.floor(g / 2) : 0) {
+    const cands = candidatesFor(date, taken, recipes, prefs, g).slice(0, 6);
+    if (cands.length === 0) continue;
+    const total = cands.reduce((n, c) => n + c.score, 0);
+    let x = rand() * total;
+    for (const c of cands) {
+      x -= c.score;
+      if (x <= 0) return c.r;
+    }
+    return cands[cands.length - 1].r;
+  }
+  return null;
+}
+
+/** Put a specific recipe on a date, locked. */
+export function setDay(plan: Plan, date: string, r: PlanRecipe, house: Household): Plan {
+  const entries = plan.entries.filter((e) => e.date !== date);
+  entries.push(entryFor(date, r, house, 'chosen', true));
+  entries.sort((a, b) => a.date.localeCompare(b.date));
+  return { ...plan, entries, openDates: plan.openDates.filter((d) => d !== date) };
+}
+
+export function clearDay(plan: Plan, date: string): Plan {
+  return {
+    ...plan,
+    entries: plan.entries.filter((e) => e.date !== date),
+    openDates: [...plan.openDates, date].sort(),
+  };
+}
+
+/** The next best recipe for a date that is not the one already there. */
+export function swapDay(plan: Plan, date: string, recipes: PlanRecipe[], prefs: Prefs, house: Household, seed: number): Plan {
+  const current = plan.entries.find((e) => e.date === date)?.recipeId;
+  const taken = new Map(plan.entries.filter((e) => e.date !== date).map((e) => [e.date, e]));
+  const pool = eligible(recipes, prefs);
+  const others = recipes.filter((r) => r.id !== current);
+  const pick = choose(date, taken, others, prefs, repeatGap(pool.length), rng(seed));
+  if (!pick) return plan;
+  const next = setDay(plan, date, pick, house);
+  // A swap is the planner's choice, not yours: keep it unlocked.
+  return { ...next, entries: next.entries.map((e) => (e.date === date ? { ...e, reason: 'pick', locked: false } : e)) };
 }
 
 /* ── summary ────────────────────────────────────────────────── */
 
-export type PlanSummary = {
-  days: number;
-  planned: number;
-  open: number;
-  cookSessions: number;
-  totalServings: number;
-  lunchesCovered: number;
-  distinctRecipes: number;
-};
-
-export function summarise(plan: PlanResult, days: number): PlanSummary {
+export function summarise(plan: Plan) {
   return {
-    days,
+    days: plan.days,
     planned: plan.entries.length,
     open: plan.openDates.length,
-    cookSessions: plan.entries.reduce((n, e) => n + e.batches, 0),
-    totalServings: round(plan.entries.reduce((n, e) => n + e.servingsMade, 0)),
-    lunchesCovered: round(plan.entries.reduce((n, e) => n + e.lunchServings, 0)),
     distinctRecipes: new Set(plan.entries.map((e) => e.recipeId)).size,
+    totalServings: round(plan.entries.reduce((n, e) => n + e.servingsMade, 0)),
   };
 }
 
