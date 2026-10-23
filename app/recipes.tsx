@@ -15,11 +15,12 @@ import { useTheme } from '../theme/ThemeProvider';
 
 type View_ = 'photos' | 'names';
 
-/** The three ways a recipe gets in. */
+/** The ways a recipe gets in. Paprika brings a whole library at once. */
 const WAYS: { icon: IconName; label: string; href: string }[] = [
   { icon: 'pencil', label: 'Hand', href: '/recipe/new' },
   { icon: 'camera', label: 'Camera', href: '/recipe/scan' },
   { icon: 'globe', label: 'Web', href: '/recipe/import' },
+  { icon: 'library', label: 'Paprika', href: '/recipe/paprika' },
 ];
 
 /**
@@ -293,7 +294,8 @@ export default function Recipes() {
                 accessibilityRole="button"
                 accessibilityLabel={w.label}
                 style={{
-                  width: 76,
+                  // Four across must fit a 360dp phone inside the page gutter.
+                  width: 70,
                   height: 62,
                   borderRadius: 8,
                   borderWidth: 1,

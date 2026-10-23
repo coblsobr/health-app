@@ -23,6 +23,9 @@
 
 import type { MealKind } from './kinds';
 
+/** Mirrors NOT_DINNER in kinds.ts — kept here so the import stays type-only. */
+const NOT_DINNER: MealKind[] = ['Breakfast', 'Sweets & baking', 'Drinks', 'Sauces & dressings'];
+
 /** What is in the middle of the plate — two nights running is what to avoid. */
 const PROTEINS: MealKind[] = ['Chicken', 'Beef', 'Pork', 'Seafood', 'Vegetarian'];
 const mainProtein = (kinds: MealKind[]) => kinds.find((k) => PROTEINS.includes(k)) ?? null;
@@ -184,10 +187,16 @@ function nearestFree(dates: string[], taken: Map<string, PlanEntry>, target: num
 
 /* ── filling ────────────────────────────────────────────────── */
 
-/** Recipes the planner is allowed to reach for, given preferences. */
+/**
+ * Recipes the planner is allowed to reach for, given preferences. Breakfasts,
+ * sweets, drinks and dressings are out unless asked for.
+ */
 export function eligible(recipes: PlanRecipe[], prefs: Prefs): PlanRecipe[] {
   return recipes.filter(
-    (r) => (r.rating == null || r.rating > 3) && !r.kinds.some((k) => prefs[k] === 'skip')
+    (r) =>
+      (r.rating == null || r.rating > 3) &&
+      !r.kinds.some((k) => prefs[k] === 'skip') &&
+      !r.kinds.some((k) => NOT_DINNER.includes(k) && prefs[k] !== 'more')
   );
 }
 

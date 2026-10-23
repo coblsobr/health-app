@@ -70,8 +70,9 @@ nothing else. **Do not add a search field, a sort control, a filter strip, a
 tab bar or a summary line to it.** Every one of those was there before and
 every one of them was scaffolding around a library holding three recipes.
 
-ADD toggles three small cells directly above it — Hand (`/recipe/new`),
-Camera (`/recipe/scan`), Web (`/recipe/import`). **Not a bottom sheet.** A
+ADD toggles four small cells directly above it — Hand (`/recipe/new`),
+Camera (`/recipe/scan`), Web (`/recipe/import`), Paprika (`/recipe/paprika`).
+70 wide, so four fit a 360dp phone. **Not a bottom sheet.** A
 titled panel with full-width labelled rows, hint text under each and a scrim
 behind it was four times the furniture this needs.
 
@@ -207,6 +208,34 @@ in the monthly plan; preferences for what kind of meals, or "do it for me".
 - The saved plan lives in `plan_current` (settings) and reopens in review.
   `replacePlan` is scoped to the plan's range; `plan_range` tells Groceries
   what to cover.
+
+## Paprika import — `lib/paprika.ts`, `app/recipe/paprika.tsx`
+
+A `.paprikarecipes` export is a zip of gzipped JSON, one per recipe; read with
+`fflate` (pure JS), picked with `expo-document-picker`, bytes read and photos
+written with `expo-file-system` (`Paths.document/photos/paprika-<uid>.jpg`).
+`node --experimental-strip-types paprika.test.mts` — every case is from the
+user's real 122-recipe export; set `PAPRIKA_EXPORT=<file>` to run the whole
+export too. The export is personal and is **not** committed.
+
+What the real export needed:
+- **Servings** are prose ("Yields: 4 - 6", "Servings: 20 cookies") — first
+  number, low end of a range.
+- **"total time: 25 minutes" filed under cook time** — prep is subtracted.
+- **Page furniture in ingredients** ("PRINT", "1X 2X 3X", "US METRIC") and
+  section headers are dropped; all-caps headers are dropped from steps too.
+- **Nutrition in five layouts** — lines, pipes, spaces-only with percentages,
+  "Calories Per Serving:", and value-first ("281 calories, 12g fat"). A
+  qualified fat ("Saturated Fat") is never fat. No calories → estimator.
+- Rating 0–5 → ×2, and 0 is unrated. Categories become tags.
+- Duplicates (same link or same name) are skipped, so re-running is safe.
+
+**Not-dinner kinds.** The library held muffins, cookies, a latte, a lassi and
+four dressings. `kinds.ts` infers Breakfast / Sweets & baking / Drinks /
+Sauces & dressings, and the planner leaves them **out unless asked for** —
+"Not usually dinner" chips on Plan let them in. A sauce word only counts at
+the end of the name and never with "with" in it: "Barley Bowl With … Avocado
+Dressing" is a bowl.
 
 ## Finding new recipes — `lib/discover.ts`, `app/discover.tsx`
 
@@ -515,7 +544,9 @@ package, its config plugin, wiring, and a new APK.
 **Next:** finish the design rework (Recipe detail → Plan/Shop → Fitness world),
 then Health Connect, then browse-&-grab import.
 
-**Shipping:** current APK runtime is `71e5137ee23f4d4e7ae79059bed33193a12dcbb9`.
+**Shipping:** current APK runtime is `82ae5bba3595faca23fd8e3cfd5d1234c3937772`
+(adds expo-document-picker + expo-file-system for Paprika import; the previous
+`71e5137e…` APK cannot take updates from here on).
 JS-only changes match it and ship over the air. Check with
 `npx expo-updates fingerprint:generate --platform android` *before* publishing,
 and confirm with `eas update:list` afterwards — a mismatched publish succeeds

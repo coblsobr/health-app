@@ -10,7 +10,7 @@ import {
   timesInPlan, toISODate, fromISODate, addDays, datesFrom, daysBetween, cadenceLabel,
   type Plan, type PlanRecipe, type Household, type Prefs,
 } from '../lib/planner';
-import { KINDS, inferKinds, type MealKind } from '../lib/kinds';
+import { KINDS, NOT_DINNER, inferKinds, type MealKind } from '../lib/kinds';
 import { groceriesFromPlan, setPlanRange } from '../lib/shop';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -147,6 +147,12 @@ export default function PlanScreen() {
   function cyclePref(k: MealKind) {
     setPrefs((p) => {
       const next = { ...p };
+      // Not-dinner kinds are out by default, so they only toggle in and out.
+      if (NOT_DINNER.includes(k)) {
+        if (p[k] === 'more') delete next[k];
+        else next[k] = 'more';
+        return next;
+      }
       if (!p[k]) next[k] = 'more';
       else if (p[k] === 'more') next[k] = 'skip';
       else delete next[k];
@@ -237,7 +243,8 @@ export default function PlanScreen() {
   };
 
   const withRhythm = recipes.filter((r) => r.cadenceDays);
-  const shownKinds = KINDS.filter((k) => (kindCounts.get(k) ?? 0) > 0);
+  const shownKinds = KINDS.filter((k) => (kindCounts.get(k) ?? 0) > 0 && !NOT_DINNER.includes(k));
+  const extraKinds = KINDS.filter((k) => (kindCounts.get(k) ?? 0) > 0 && NOT_DINNER.includes(k));
 
   /* ── setup ─────────────────────────────────────────────────── */
 
@@ -300,7 +307,11 @@ export default function PlanScreen() {
 
       <Label>What sounds good</Label>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        <Chip on={Object.keys(prefs).length === 0} label="Surprise me" onPress={() => setPrefs({})} />
+        <Chip
+          on={!Object.keys(prefs).some((k) => !NOT_DINNER.includes(k as MealKind))}
+          label="Surprise me"
+          onPress={() => setPrefs((p) => Object.fromEntries(Object.entries(p).filter(([k]) => NOT_DINNER.includes(k as MealKind))))}
+        />
         {shownKinds.map((k) => (
           <Chip
             key={k}

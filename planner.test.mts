@@ -179,5 +179,37 @@ console.log('\n════════ meal kinds ════════\n');
   check('quick by tag', k('Eggs', ['eggs'], ['Quick']).includes('Quick'));
 }
 
+console.log('\n════════ not dinner ════════\n');
+{
+  // All from a real imported library.
+  const k = (name: string, tags: string[] = []) => inferKinds({ name, ingredients: ['1 egg'], tags, minutes: null });
+  check('muffins are baking', k('Baby Led Weaning Raspberry Muffins').includes('Sweets & baking'));
+  check('cookies are baking', k('Bakery-Style Peanut Butter Chocolate Chip Cookies').includes('Sweets & baking'));
+  check('a latte is a drink', k('Peppermint Mocha Latte {Starbucks Copycat}').includes('Drinks'));
+  check('a lassi is a drink', k('Mango Lassi').includes('Drinks'));
+  check('a dressing is a dressing', k('Chipotle Ranch Dressing').includes('Sauces & dressings'));
+  check('a bowl with a dressing is a bowl',
+    !k('Barley Bowl With Chickpeas Roasted Vegs And Avocodo Dressing').includes('Sauces & dressings'));
+  check('ravioli with a sauce in the name is dinner',
+    !k('Sage Brown Butter Sauce Butternut Squash Ravioli').includes('Sauces & dressings'));
+  check('crepes are breakfast', k('Easy Baby Crepes with Berries and Yogurt').includes('Breakfast'));
+  check('a Breakfast category is breakfast', k('Something', ['Breakfast']).includes('Breakfast'));
+  check('a cheeseburger pie is dinner', !k('Cheeseburger Pie').some((x) => ['Breakfast', 'Sweets & baking'].includes(x)));
+
+  const lib = [
+    ...LIBRARY,
+    recipe({ id: 'muffins', kinds: ['Sweets & baking'], rating: 10 }),
+    recipe({ id: 'latte', kinds: ['Drinks'], rating: 10 }),
+  ];
+  const p = buildPlan(lib, { start: START, days: 30, house: HOUSE, prefs: {}, seed: 8 });
+  check('muffins and lattes stay off dinner nights', !p.entries.some((e) => ['muffins', 'latte'].includes(e.recipeId)));
+  let seen = false;
+  for (let s = 0; s < 10 && !seen; s++) {
+    seen = buildPlan(lib, { start: START, days: 30, house: HOUSE, prefs: { 'Sweets & baking': 'more' }, seed: s })
+      .entries.some((e) => e.recipeId === 'muffins');
+  }
+  check('unless asked for', seen);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
