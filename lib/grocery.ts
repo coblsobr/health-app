@@ -18,6 +18,8 @@ import { parseIngredientLine, matchFood } from './nutrition';
 
 export const AISLES = [
   'Produce', 'Meat & Seafood', 'Dairy & Eggs', 'Bakery', 'Pantry', 'Frozen', 'Other',
+  // Staples from Preferences: listed last, left out of the Meijer cart.
+  'Check the pantry',
 ] as const;
 export type Aisle = (typeof AISLES)[number];
 
@@ -92,6 +94,19 @@ const UNIT_FAMILY: Record<string, { family: Family; base: number; label: string 
   heads: { family: 'count', base: 1, label: 'head' },
 };
 
+/**
+ * Round an amount UP to something you can buy. Nobody buys 0.63 of an onion
+ * or 24.17 cloves of garlic: counts go to whole numbers, small measures to a
+ * quarter, bigger ones to a half, and large ones to a whole.
+ */
+export function shopAmount(n: number, counted: boolean): number {
+  const up = (step: number) => Math.ceil(n / step - 0.02) * step;
+  if (counted) return Math.max(1, up(1));
+  if (n < 4) return up(0.25);
+  if (n < 10) return up(0.5);
+  return up(1);
+}
+
 /** Tidy numbers for a shopping list: 1.5, 3, 0.25 — never 1.4999999. */
 export function formatQty(n: number): string {
   const r = Math.round(n * 100) / 100;
@@ -125,7 +140,25 @@ export type GroceryLine = {
   /** "3", "1.5 lb", "500 g + 2 tbsp" — ready to display. */
   display: string;
   recipes: string[];
+  /**
+   * What to type into a shop's search box: the recipes' own words ("cherry
+   * tomatoes", "parmesan cheese"), not the USDA name ("Cheese, parmesan"),
+   * which searches badly.
+   */
+  search: string;
 };
+
+/** Amount and packaging words that are not part of what to search for. */
+const NOT_SEARCH = /\b(?:\d+|oz|ounces?|cans?|pt|pints?|pkg|packages?|jars?|lbs?|pounds?|inch|large|small|medium|plus|tbsps?|tsps?|cups?|handful|loosely|pinch|twelve|one|two|three|four)\b|-/g;
+
+export function searchPhrase(food: string): string {
+  return food
+    // The recipe author talking: "vegan cream see notes", "i used violife".
+    .replace(/\b(?:see notes?|i used|such as|we like|optional)\b.*$/, '')
+    // "flank steak or your favorite cut" — the first choice is the one to buy.
+    .replace(/\s+or\s+.*$/, '')
+    .replace(NOT_SEARCH, ' ').replace(/\s+/g, ' ').trim();
+}
 
 type Bucket = {
   name: string;
@@ -134,6 +167,8 @@ type Bucket = {
   /** Contributions with no recognisable unit, kept verbatim. */
   loose: string[];
   recipes: Set<string>;
+  /** Each recipe phrase that landed here, and how often. */
+  phrases: Map<string, number>;
 };
 
 /**
@@ -151,20 +186,27 @@ export function buildGroceryList(planned: PlannedRecipe[]): GroceryLine[] {
     for (const line of r.ingredientLines) {
       const parsed = parseIngredientLine(line);
       if (!parsed.food) continue;
+      // Water is not shopping.
+      if (/(?:^|\s)water$/.test(parsed.food)) continue;
 
-      const food = matchFood(parsed.food);
+      // A phrase the parser left packaging on ("-ounce cans chickpeas") gets a
+      // second try with that stripped.
+      const food = matchFood(parsed.food) ?? matchFood(searchPhrase(parsed.food));
       // Match on the USDA food where possible, so "yellow onion" and "onions"
       // land on the same shopping line instead of two.
-      const key = (food?.n ?? parsed.food).toLowerCase();
+      const key = (food?.n ?? searchPhrase(parsed.food) ?? parsed.food).toLowerCase();
       const aisle: Aisle = (food && CATEGORY_AISLE[food.c]) || 'Other';
-      const displayName = food ? tidyFoodName(food.n) : parsed.food;
+      const plain = searchPhrase(parsed.food) || parsed.food;
+      const displayName = food ? tidyFoodName(food.n) : plain.charAt(0).toUpperCase() + plain.slice(1);
 
       let b = buckets.get(key);
       if (!b) {
-        b = { name: displayName, aisle, byFamily: new Map(), loose: [], recipes: new Set() };
+        b = { name: displayName, aisle, byFamily: new Map(), loose: [], recipes: new Set(), phrases: new Map() };
         buckets.set(key, b);
       }
       b.recipes.add(r.name);
+      const phrase = searchPhrase(parsed.food);
+      if (phrase) b.phrases.set(phrase, (b.phrases.get(phrase) ?? 0) + 1);
 
       const qty = parsed.qty != null ? parsed.qty * scale : null;
       const unitDef = parsed.unit ? UNIT_FAMILY[parsed.unit] : undefined;
@@ -208,13 +250,16 @@ export function buildGroceryList(planned: PlannedRecipe[]): GroceryLine[] {
   for (const [key, b] of buckets) {
     const parts: string[] = [];
     for (const [, fam] of b.byFamily) {
-      const value = fam.total / fam.unitBase;
+      const value = shopAmount(fam.total / fam.unitBase, !fam.unitLabel || COUNTABLE.has(fam.unitLabel));
       // A bare count has no label ("3 onions"); a counted unit keeps one and
       // needs pluralising ("3 cloves", not "3 clove").
       parts.push(fam.unitLabel ? `${formatQty(value)} ${pluralise(fam.unitLabel, value)}` : formatQty(value));
     }
     parts.push(...b.loose);
+    // Most common wording wins; a tie goes to the shorter, plainer one.
+    const search = [...b.phrases.entries()].sort((x, y) => y[1] - x[1] || x[0].length - y[0].length)[0]?.[0] ?? b.name;
     lines.push({
+      search,
       key,
       name: b.name,
       aisle: b.aisle,

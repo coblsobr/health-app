@@ -3,40 +3,39 @@ import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useNavigation } from 'expo-router';
 import {
-  listForPlanner, getSetting, setSetting, replacePlan, markPastPlanMade, type PlannerRow,
+  listForPlanner, getSetting, setSetting, replacePlan, markPastPlanMade, saveRecipe, listSourceUrls,
+  type PlannerRow, type RecipeInput,
 } from '../lib/db';
 import {
-  buildPlan, setDay, clearDay, swapDay, candidatesFor, summarise, servingsPerCook,
-  timesInPlan, toISODate, fromISODate, addDays, datesFrom, daysBetween, cadenceLabel,
-  type Plan, type PlanRecipe, type Household, type Prefs,
+  buildPlan, setDay, swapDay, candidatesFor, servingsPerCook, householdFrom, cookDates,
+  toISODate, fromISODate, addDays, cadenceLabel,
+  type Plan, type PlanRecipe,
 } from '../lib/planner';
-import { KINDS, NOT_DINNER, inferKinds, type MealKind } from '../lib/kinds';
+import { inferKinds } from '../lib/kinds';
+import { describePeople, DEFAULT_PREFERENCES, type Preferences } from '../lib/prefs';
+import { loadPreferences } from '../lib/preferences';
 import { groceriesFromPlan, setPlanRange } from '../lib/shop';
+import { discover, SOURCES } from '../lib/discover';
+import { estimateRecipe } from '../lib/nutrition';
 import { useTheme } from '../theme/ThemeProvider';
 
 /**
- * Build a dinner plan.
+ * Plan the week in three choices: how many meals, over how many days, and
+ * whether to bring in something new from online. Everything else — who is
+ * eating, leftovers, swaps — was decided once in Preferences.
  *
- * Two screens. Setup: how long, how much, what sounds good — or nothing, and
- * it picks. Review: every night is filled; tap one to swap it, choose it
- * yourself, lock it or clear it, and shuffle the rest. One button saves the
- * plan and makes the grocery list.
+ * Then "Happy with these?": replace any meal, or pick one yourself, and one
+ * button saves the plan and makes the grocery list.
  *
- * The last saved plan reopens in review, so coming back to this screen shows
- * what is for dinner rather than a blank form.
+ * The last saved plan reopens here, so coming back shows what is for dinner.
  */
 
-const HORIZONS: { label: string; days: number }[] = [
-  { label: 'Week', days: 7 },
-  { label: '2 weeks', days: 14 },
-  { label: 'Month', days: 30 },
-];
-
+const DAY_CHOICES = [5, 7, 14];
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 type Step = 'setup' | 'review';
-type Saved = { plan: Plan; house: Household; prefs: Prefs };
+type Saved = { plan: Plan };
 
 const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 
@@ -47,24 +46,34 @@ export default function PlanScreen() {
   const insets = useSafeAreaInsets();
 
   const [rows, setRows] = useState<PlannerRow[]>([]);
+  const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFERENCES);
   const [step, setStep] = useState<Step>('setup');
   const [plan, setPlan] = useState<Plan | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [choosing, setChoosing] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
+  const [meals, setMeals] = useState(3);
   const [days, setDays] = useState(7);
-  const [startIn, setStartIn] = useState(0);
-  const [perMeal, setPerMeal] = useState(2.5);
-  const [leftoverLunch, setLeftoverLunch] = useState(true);
-  const [prefs, setPrefs] = useState<Prefs>({});
+  const [online, setOnline] = useState(false);
 
   const today = toISODate(new Date());
   // Reopen the saved plan once, on first visit — not on every focus, or
   // coming back from a recipe would throw away unsaved changes.
   const restored = useRef(false);
+
+  const reload = useCallback(async () => {
+    const [lib, pr] = await Promise.all([
+      listForPlanner().catch(() => [] as PlannerRow[]),
+      loadPreferences().catch(() => DEFAULT_PREFERENCES),
+    ]);
+    setRows(lib);
+    setPrefs(pr);
+    return lib;
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -72,29 +81,29 @@ export default function PlanScreen() {
       (async () => {
         // First, so a dinner eaten yesterday counts towards its rhythm today.
         await markPastPlanMade(today).catch(() => {});
-        const [lib, hh, pf, cur] = await Promise.all([
-          listForPlanner().catch(() => [] as PlannerRow[]),
-          getSetting('household').catch(() => null),
-          getSetting('plan_prefs').catch(() => null),
+        await reload();
+        const [choice, cur] = await Promise.all([
+          getSetting('plan_choice').catch(() => null),
           getSetting('plan_current').catch(() => null),
         ]);
         if (!alive) return;
-        setRows(lib);
-        if (hh) {
-          const h = JSON.parse(hh);
-          if (typeof h.perMeal === 'number') setPerMeal(h.perMeal);
-          if (typeof h.leftoverLunch === 'boolean') setLeftoverLunch(h.leftoverLunch);
+        if (choice) {
+          try {
+            const ch = JSON.parse(choice);
+            if (typeof ch.meals === 'number') setMeals(ch.meals);
+            if (typeof ch.days === 'number') setDays(ch.days);
+            if (typeof ch.online === 'boolean') setOnline(ch.online);
+          } catch {}
         }
-        if (pf) setPrefs(JSON.parse(pf));
         if (cur && !restored.current) {
-          const saved: Saved = JSON.parse(cur);
-          const end = addDays(saved.plan.start, saved.plan.days - 1);
-          if (end >= today) {
-            setPlan(saved.plan);
-            setDays(saved.plan.days);
-            setStep('review');
-            setDirty(false);
-          }
+          try {
+            const saved: Saved = JSON.parse(cur);
+            if (addDays(saved.plan.start, saved.plan.days - 1) >= today) {
+              setPlan(saved.plan);
+              setStep('review');
+              setDirty(false);
+            }
+          } catch {}
         }
         restored.current = true;
       })();
@@ -103,76 +112,100 @@ export default function PlanScreen() {
     }, [])
   );
 
-  const recipes: PlanRecipe[] = useMemo(
-    () =>
-      rows.map((r) => ({
-        id: r.id,
+  const toPlanRecipes = (list: PlannerRow[]): PlanRecipe[] =>
+    list.map((r) => ({
+      id: r.id,
+      name: r.name,
+      servings: r.servings || 4,
+      rating: r.rating,
+      favorite: !!r.is_favorite,
+      cadenceDays: r.cadence_days,
+      lastMade: r.last_made_at ? r.last_made_at.slice(0, 10) : null,
+      kinds: inferKinds({
         name: r.name,
-        servings: r.servings || 4,
-        rating: r.rating,
-        favorite: !!r.is_favorite,
-        cadenceDays: r.cadence_days,
-        lastMade: r.last_made_at ? r.last_made_at.slice(0, 10) : null,
-        kinds: inferKinds({
-          name: r.name,
-          ingredients: r.ingredients ? r.ingredients.split('\n') : [],
-          tags: r.tags ? r.tags.split('\n') : [],
-          minutes: r.minutes,
-        }),
-      })),
-    [rows]
-  );
-  const byId = useMemo(() => new Map(recipes.map((r) => [r.id, r])), [recipes]);
+        ingredients: r.ingredients ? r.ingredients.split('\n') : [],
+        tags: r.tags ? r.tags.split('\n') : [],
+        minutes: r.minutes,
+      }),
+    }));
 
-  const house: Household = { perMeal, leftoverLunch };
+  const recipes = useMemo(() => toPlanRecipes(rows), [rows]);
+  const byId = useMemo(() => new Map(recipes.map((r) => [r.id, r])), [recipes]);
+  const house = householdFrom(prefs.people);
   const perCook = servingsPerCook(house);
 
-  const nextMonday = (() => {
-    const dow = new Date().getDay();
-    return ((8 - dow) % 7) || 7;
-  })();
-  const STARTS = [
-    { label: 'Today', offset: 0 },
-    { label: 'Tomorrow', offset: 1 },
-    ...(nextMonday > 1 ? [{ label: 'Next Monday', offset: nextMonday }] : []),
-  ];
-  const start = addDays(today, startIn);
-
-  const kindCounts = useMemo(() => {
-    const m = new Map<MealKind, number>();
-    for (const r of recipes) for (const k of r.kinds) m.set(k, (m.get(k) ?? 0) + 1);
-    return m;
-  }, [recipes]);
-
-  function cyclePref(k: MealKind) {
-    setPrefs((p) => {
-      const next = { ...p };
-      // Not-dinner kinds are out by default, so they only toggle in and out.
-      if (NOT_DINNER.includes(k)) {
-        if (p[k] === 'more') delete next[k];
-        else next[k] = 'more';
-        return next;
-      }
-      if (!p[k]) next[k] = 'more';
-      else if (p[k] === 'more') next[k] = 'skip';
-      else delete next[k];
-      return next;
+  /** Fetch a few new recipes from the blogs, save them to the library, return their ids. */
+  async function findNew(count: number): Promise<string[]> {
+    const have = await listSourceUrls().catch(() => []);
+    const report = await discover(SOURCES.filter((s) => s.standard).map((s) => s.id), count, have, {
+      onProgress: (done, total) => setBusy(`Finding new recipes… ${done + 1} of ${total}`),
     });
+    const ids: string[] = [];
+    for (const f of report.found) {
+      const r = f.recipe;
+      const servings = r.servings ?? 4;
+      let nutrition: RecipeInput['nutrition'] = r.nutrition
+        ? { kcal: r.nutrition.calories, protein: r.nutrition.protein, carbs: r.nutrition.carbs, fat: r.nutrition.fat,
+            fiber: r.nutrition.fiber, sugar: r.nutrition.sugar, sodium: r.nutrition.sodium, source: 'published' }
+        : null;
+      if (!nutrition) {
+        const e = estimateRecipe(r.ingredients, servings);
+        if (e.coverage >= 0.5) {
+          const n = e.perServing;
+          nutrition = { kcal: n.kcal, protein: n.protein, carbs: n.carbs, fat: n.fat, fiber: n.fiber, sugar: n.sugar, sodium: n.sodium, source: 'estimated' };
+        }
+      }
+      ids.push(await saveRecipe({
+        name: r.name, servings, prepMin: r.prepMin, cookMin: r.cookMin, sourceUrl: f.url,
+        photoUri: r.imageUrl, notes: r.description, rating: null,
+        ingredients: r.ingredients.map((text) => ({ text, isPrimary: false })),
+        steps: r.steps, tags: ['Found online'], nutrition,
+      }));
+    }
+    return ids;
   }
 
-  function build() {
-    setSetting('household', JSON.stringify({ perMeal, leftoverLunch })).catch(() => {});
-    setSetting('plan_prefs', JSON.stringify(prefs)).catch(() => {});
-    setPlan(buildPlan(recipes, { start, days, house, prefs, seed: newSeed() }));
+  async function makePlan() {
+    setNote(null);
+    setSetting('plan_choice', JSON.stringify({ meals, days, online })).catch(() => {});
+    let lib = rows;
+    let fresh: string[] = [];
+    if (online) {
+      setBusy('Finding new recipes…');
+      try {
+        fresh = await findNew(Math.max(1, Math.round(meals / 3)));
+        lib = await reload();
+      } catch {
+        // Handled below: no new recipes is said the same way either way.
+      }
+      if (fresh.length === 0) setNote("Couldn't find anything new just now, so these are all from your library.");
+    }
+    const all = toPlanRecipes(lib);
+    const mine = all.filter((r) => !fresh.includes(r.id));
+    let p = buildPlan(mine, { start: today, days, meals, house, prefs: prefs.kinds, seed: newSeed() });
+
+    // Put the new ones on the last cook days that are not a rhythm.
+    const spots = p.entries.filter((e) => e.reason !== 'rhythm').map((e) => e.date).reverse();
+    fresh.forEach((id, i) => {
+      const r = all.find((x) => x.id === id);
+      if (!r || !spots[i]) return;
+      p = setDay(p, spots[i], r, house);
+      p = { ...p, entries: p.entries.map((e) => (e.date === spots[i] ? { ...e, reason: 'new', locked: false } : e)) };
+    });
+
+    setPlan(p);
     setOpen(null);
     setDirty(true);
+    setBusy(null);
     setStep('review');
   }
 
   function shuffle() {
     if (!plan) return;
-    const keep = plan.entries.filter((e) => e.locked);
-    setPlan(buildPlan(recipes, { start: plan.start, days: plan.days, house, prefs, seed: newSeed(), keep }));
+    const keep = plan.entries.filter((e) => e.locked || e.reason === 'new');
+    setPlan(buildPlan(recipes, {
+      start: plan.start, days: plan.days, meals: plan.slots?.length, house, prefs: prefs.kinds, seed: newSeed(), keep,
+    }));
     setOpen(null);
     setDirty(true);
   }
@@ -184,270 +217,166 @@ export default function PlanScreen() {
     setShowAll(false);
   }
 
-  async function saveAndShop() {
+  async function confirm() {
     if (!plan) return;
-    setBusy(true);
+    setBusy('Making your grocery list…');
     try {
       const end = addDays(plan.start, plan.days - 1);
       await replacePlan(
-        plan.start,
-        end,
+        plan.start, end,
         plan.entries.map((e) => ({ date: e.date, recipeId: e.recipeId, servings: e.servingsMade }))
       );
-      const saved: Saved = { plan, house, prefs };
-      await setSetting('plan_current', JSON.stringify(saved));
+      await setSetting('plan_current', JSON.stringify({ plan } satisfies Saved));
       await setPlanRange({ from: plan.start, to: end });
+      await setSetting('grocery_week', '-1').catch(() => {});
       await groceriesFromPlan(plan.start, end);
       setDirty(false);
       router.push('/groceries' as never);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   const PAD = 18;
   const Label = ({ children, first }: { children: string; first?: boolean }) => (
-    <Text style={{ fontFamily: fonts.semi, fontSize: 11, color: c.inkFaint, letterSpacing: 1.1, marginTop: first ? 8 : 24, marginBottom: 8 }}>
+    <Text style={{ fontFamily: fonts.semi, fontSize: 11, color: c.inkFaint, letterSpacing: 1.1, marginTop: first ? 8 : 26, marginBottom: 10 }}>
       {children.toUpperCase()}
     </Text>
   );
-  const Chip = ({ on, off, label, onPress }: { on: boolean; off?: boolean; label: string; onPress: () => void }) => (
+  const Chip = ({ on, label, onPress }: { on: boolean; label: string; onPress: () => void }) => (
     <Pressable
       onPress={onPress}
       style={{
-        paddingVertical: 8, paddingHorizontal: 13, borderRadius: 7, borderWidth: 1,
+        paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1,
         borderColor: on ? c.nut : c.line, backgroundColor: on ? c.nut : 'transparent',
-        opacity: off ? 0.55 : 1,
       }}
     >
-      <Text
-        style={{
-          fontFamily: on ? fonts.semi : fonts.body, fontSize: 13,
-          color: on ? '#fff' : c.inkSoft,
-          textDecorationLine: off ? 'line-through' : 'none',
-        }}
-      >
-        {label}
-      </Text>
+      <Text style={{ fontFamily: on ? fonts.semi : fonts.body, fontSize: 14.5, color: on ? '#fff' : c.inkSoft }}>{label}</Text>
     </Pressable>
   );
-  const Action = ({ label, onPress, strong }: { label: string; onPress: () => void; strong?: boolean }) => (
+  const Action = ({ label, onPress }: { label: string; onPress: () => void }) => (
     <Pressable onPress={onPress} hitSlop={8} style={{ paddingVertical: 6 }}>
-      <Text style={{ fontFamily: strong ? fonts.bold : fonts.semi, fontSize: 13.5, color: c.nut }}>{label}</Text>
+      <Text style={{ fontFamily: fonts.semi, fontSize: 14, color: c.nut }}>{label}</Text>
     </Pressable>
   );
-
   const dayLabel = (iso: string) => {
     const d = fromISODate(iso);
     return { dow: DOW[d.getDay()], date: `${MON[d.getMonth()]} ${d.getDate()}` };
   };
 
-  const withRhythm = recipes.filter((r) => r.cadenceDays);
-  const shownKinds = KINDS.filter((k) => (kindCounts.get(k) ?? 0) > 0 && !NOT_DINNER.includes(k));
-  const extraKinds = KINDS.filter((k) => (kindCounts.get(k) ?? 0) > 0 && NOT_DINNER.includes(k));
-
   /* ── setup ─────────────────────────────────────────────────── */
 
   const setup = (
     <>
-      <Label first>How long</Label>
+      <Label first>How many meals</Label>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Pressable onPress={() => setMeals((m) => Math.max(1, m - 1))} hitSlop={10} style={{ paddingHorizontal: 12 }}>
+          <Text style={{ fontSize: 30, color: c.inkSoft }}>−</Text>
+        </Pressable>
+        <Text style={{ fontFamily: fonts.display, fontSize: 46, color: c.ink, minWidth: 56, textAlign: 'center' }}>{meals}</Text>
+        <Pressable onPress={() => setMeals((m) => Math.min(days, m + 1))} hitSlop={10} style={{ paddingHorizontal: 12 }}>
+          <Text style={{ fontSize: 30, color: c.inkSoft }}>+</Text>
+        </Pressable>
+      </View>
+
+      <Label>Over how many days</Label>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {HORIZONS.map((h) => (
-          <Chip key={h.label} on={days === h.days} label={h.label} onPress={() => setDays(h.days)} />
+        {DAY_CHOICES.map((d) => (
+          <Chip key={d} on={days === d} label={`${d} days`} onPress={() => { setDays(d); setMeals((m) => Math.min(m, d)); }} />
         ))}
       </View>
 
-      <Label>Starting</Label>
+      <Label>Recipes</Label>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {STARTS.map((s) => (
-          <Chip key={s.label} on={startIn === s.offset} label={s.label} onPress={() => setStartIn(s.offset)} />
-        ))}
+        <Chip on={!online} label="Just mine" onPress={() => setOnline(false)} />
+        <Chip on={online} label="Mix in something new" onPress={() => setOnline(true)} />
       </View>
+      {online ? (
+        <Text style={{ fontFamily: fonts.body, fontSize: 12.5, color: c.inkFaint, marginTop: 8, lineHeight: 18 }}>
+          About one in three meals comes from a food blog, and is saved to your recipes so you can keep it.
+        </Text>
+      ) : null}
 
-      <Label>How much</Label>
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6 }}>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: fonts.body, fontSize: 15, color: c.ink }}>Servings per meal</Text>
-          <Text style={{ fontFamily: fonts.body, fontSize: 12, color: c.inkFaint, marginTop: 2 }}>
-            Count a little one as half
-          </Text>
-        </View>
-        <Pressable onPress={() => setPerMeal((v) => Math.max(0.5, v - 0.5))} hitSlop={10} style={{ paddingHorizontal: 14 }}>
-          <Text style={{ fontSize: 22, color: c.inkSoft }}>−</Text>
-        </Pressable>
-        <Text style={{ fontFamily: fonts.bold, fontSize: 17, color: c.ink, minWidth: 34, textAlign: 'center' }}>{perMeal}</Text>
-        <Pressable onPress={() => setPerMeal((v) => v + 0.5)} hitSlop={10} style={{ paddingHorizontal: 14 }}>
-          <Text style={{ fontSize: 22, color: c.inkSoft }}>+</Text>
-        </Pressable>
-      </View>
-      <View style={{ height: 1, backgroundColor: c.line }} />
-      <Pressable
-        onPress={() => setLeftoverLunch((v) => !v)}
-        style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12 }}
-      >
-        <View
-          style={{
-            width: 20, height: 20, borderRadius: 4, borderWidth: 1.5,
-            borderColor: leftoverLunch ? c.nut : c.line, backgroundColor: leftoverLunch ? c.nut : 'transparent',
-            alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          {leftoverLunch ? <Text style={{ color: '#fff', fontSize: 12, lineHeight: 14 }}>✓</Text> : null}
-        </View>
-        <Text style={{ fontFamily: fonts.body, fontSize: 15, color: c.ink, flex: 1 }}>
-          Leftovers for the next day's lunch
+      <View style={{ height: 1, backgroundColor: c.line, marginTop: 28 }} />
+      <Pressable onPress={() => router.push('/preferences' as never)} style={{ paddingVertical: 14 }}>
+        <Text style={{ fontFamily: fonts.body, fontSize: 13.5, color: c.inkSoft, lineHeight: 20 }}>
+          {describePeople(prefs.people)} — each meal makes{' '}
+          <Text style={{ fontFamily: fonts.semi, color: c.ink }}>{perCook}+ servings</Text>.
+          {prefs.swaps.length ? ` ${prefs.swaps.length} swap${prefs.swaps.length === 1 ? '' : 's'} on.` : ''}{' '}
+          <Text style={{ color: c.nut, fontFamily: fonts.semi }}>Preferences</Text>
         </Text>
       </Pressable>
-      <Text style={{ fontFamily: fonts.body, fontSize: 13, color: c.inkSoft, lineHeight: 19 }}>
-        Every dinner makes at least{' '}
-        <Text style={{ fontFamily: fonts.semi, color: c.ink }}>{perCook} servings</Text>
-        {leftoverLunch ? ` — ${perMeal} tonight, ${perMeal} for lunch.` : '.'} Recipes are scaled up in
-        half-batch steps.
+      <Text style={{ fontFamily: fonts.body, fontSize: 12.5, color: c.inkFaint, lineHeight: 18 }}>
+        Cooking on {cookDates(today, days, meals).map((d) => dayLabel(d).dow).join(', ')}.
       </Text>
-
-      <Label>What sounds good</Label>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        <Chip
-          on={!Object.keys(prefs).some((k) => !NOT_DINNER.includes(k as MealKind))}
-          label="Surprise me"
-          onPress={() => setPrefs((p) => Object.fromEntries(Object.entries(p).filter(([k]) => NOT_DINNER.includes(k as MealKind))))}
-        />
-        {shownKinds.map((k) => (
-          <Chip
-            key={k}
-            on={prefs[k] === 'more'}
-            off={prefs[k] === 'skip'}
-            label={`${prefs[k] === 'more' ? 'More ' : ''}${k}`}
-            onPress={() => cyclePref(k)}
-          />
-        ))}
-      </View>
-      <Text style={{ fontFamily: fonts.body, fontSize: 12, color: c.inkFaint, marginTop: 8, lineHeight: 17 }}>
-        {shownKinds.length === 0
-          ? 'Add a few recipes and their kinds show up here.'
-          : 'Tap once for more of it, twice to leave it out. Kinds are read from each recipe\'s name and ingredients.'}
-      </Text>
-
-      <Label>On a rhythm</Label>
-      {withRhythm.length === 0 ? (
-        <Text style={{ fontFamily: fonts.body, fontSize: 13, color: c.inkFaint, lineHeight: 19 }}>
-          None yet. On the recipe list, tap "How often?" on a recipe to have it land in every plan
-          on its own schedule.
-        </Text>
-      ) : (
-        withRhythm.map((r) => {
-          const n = timesInPlan(r, start, days);
-          return (
-            <View key={r.id} style={{ flexDirection: 'row', alignItems: 'baseline', paddingVertical: 8, gap: 10 }}>
-              <Text numberOfLines={1} style={{ fontFamily: fonts.body, fontSize: 15, color: c.ink, flex: 1 }}>{r.name}</Text>
-              <Text style={{ fontFamily: fonts.body, fontSize: 12, color: c.inkFaint }}>{cadenceLabel(r.cadenceDays)}</Text>
-              <Text style={{ fontFamily: fonts.semi, fontSize: 12, color: n ? c.nut : c.inkFaint, minWidth: 52, textAlign: 'right' }}>
-                {n ? `${n}× in plan` : 'not due'}
-              </Text>
-            </View>
-          );
-        })
-      )}
     </>
   );
 
   /* ── review ────────────────────────────────────────────────── */
 
   const review = plan ? (() => {
-    const s = summarise(plan);
+    const slots = plan.slots ?? plan.entries.map((e) => e.date);
     const entries = new Map(plan.entries.map((e) => [e.date, e]));
-    const made = plan.entries.map((e) => e.servingsMade);
-    const lo = Math.min(...made);
-    const hi = Math.max(...made);
-
     return (
       <>
-        <Text style={{ fontFamily: fonts.body, fontSize: 14.5, color: c.inkSoft, lineHeight: 21, marginTop: 4 }}>
-          <Text style={{ fontFamily: fonts.semi, color: c.ink }}>
-            {s.planned} dinner{s.planned === 1 ? '' : 's'}
-          </Text>{' '}
-          from {s.distinctRecipes} recipe{s.distinctRecipes === 1 ? '' : 's'}
-          {s.planned ? ` · each makes ${lo === hi ? lo : `${lo}–${hi}`} servings` : ''}.
-          {' '}Tap a night to change it.
+        <Text style={{ fontFamily: fonts.display, fontSize: 24, color: c.ink, marginTop: 2 }}>
+          {dirty ? 'Happy with these?' : 'This week'}
         </Text>
-        {s.open > 0 ? (
-          <Text style={{ fontFamily: fonts.body, fontSize: 13, color: c.nut, marginTop: 8, lineHeight: 19 }}>
-            {s.open} night{s.open === 1 ? '' : 's'} left open —{' '}
-            {recipes.length === 0 ? 'add some recipes first.' : 'not enough recipes fit your preferences.'}
-          </Text>
-        ) : null}
+        <Text style={{ fontFamily: fonts.body, fontSize: 13.5, color: c.inkSoft, marginTop: 4, lineHeight: 19 }}>
+          Tap a meal to replace it or pick one yourself.
+        </Text>
+        {note ? <Text style={{ fontFamily: fonts.body, fontSize: 13, color: c.nut, marginTop: 8, lineHeight: 19 }}>{note}</Text> : null}
 
-        {datesFrom(plan.start, plan.days).map((date, i) => {
+        {slots.map((date) => {
           const e = entries.get(date);
           const r = e ? byId.get(e.recipeId) : undefined;
           const { dow, date: dl } = dayLabel(date);
           const isOpen = open === date;
-          const past = daysBetween(today, date) < 0;
-
+          const others = new Map(plan.entries.filter((x) => x.date !== date).map((x) => [x.date, x]));
           const choices = isOpen && choosing
-            ? candidatesFor(date, new Map(plan.entries.filter((x) => x.date !== date).map((x) => [x.date, x])), recipes, {}, 1)
-                .map((x) => x.r)
+            ? (showAll ? recipes : candidatesFor(date, others, recipes, prefs.kinds, 1).map((x) => x.r).slice(0, 8))
                 .filter((x) => x.id !== e?.recipeId)
             : [];
-          const listed = showAll ? recipes.filter((x) => x.id !== e?.recipeId) : choices.slice(0, 8);
+          const tag = e?.reason === 'new' ? 'New' : e?.reason === 'rhythm' && r?.cadenceDays ? cadenceLabel(r.cadenceDays) : null;
 
           return (
             <View key={date}>
-              {i % 7 === 0 && plan.days > 7 ? (
-                <Text style={{ fontFamily: fonts.displayItalic, fontSize: 17, color: c.ink, marginTop: 22, marginBottom: 2 }}>
-                  Week {i / 7 + 1}
-                </Text>
-              ) : null}
               <Pressable
                 onPress={() => { setOpen(isOpen ? null : date); setChoosing(!e); setShowAll(false); }}
-                style={{ flexDirection: 'row', paddingVertical: 11, gap: 12, opacity: past ? 0.5 : 1 }}
+                style={{ flexDirection: 'row', paddingVertical: 14, gap: 12 }}
               >
                 <View style={{ width: 50 }}>
-                  <Text style={{ fontFamily: fonts.semi, fontSize: 12.5, color: c.nut }}>{dow}</Text>
+                  <Text style={{ fontFamily: fonts.semi, fontSize: 13, color: c.nut }}>{dow}</Text>
                   <Text style={{ fontFamily: fonts.body, fontSize: 11.5, color: c.inkFaint }}>{dl}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text numberOfLines={2} style={{ fontFamily: fonts.body, fontSize: 15.5, color: e ? c.ink : c.inkFaint, lineHeight: 20 }}>
+                  <Text numberOfLines={2} style={{ fontFamily: fonts.body, fontSize: 16.5, color: e ? c.ink : c.inkFaint, lineHeight: 21 }}>
                     {e ? e.name : 'Nothing yet — tap to choose'}
                   </Text>
                   {e ? (
-                    <Text style={{ fontFamily: fonts.body, fontSize: 11.5, color: c.inkFaint, marginTop: 2 }}>
-                      {e.servingsMade} servings{e.scale !== 1 ? ` (${e.scale}×)` : ''}
-                      {e.reason === 'rhythm' && r?.cadenceDays ? ` · ${cadenceLabel(r.cadenceDays)}` : ''}
-                      {e.locked ? ' · kept' : ''}
-                      {r && r.kinds.length ? ` · ${r.kinds.filter((k) => k !== 'Quick').slice(0, 2).join(', ')}` : ''}
+                    <Text style={{ fontFamily: fonts.body, fontSize: 12, color: c.inkFaint, marginTop: 3 }}>
+                      {e.servingsMade} servings{e.scale !== 1 ? ` (make ${e.scale}×)` : ''}
+                      {tag ? <Text style={{ color: c.nut, fontFamily: fonts.semi }}>{`  ·  ${tag}`}</Text> : null}
                     </Text>
                   ) : null}
                 </View>
               </Pressable>
 
               {isOpen ? (
-                <View style={{ marginLeft: 62, marginBottom: 8 }}>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 20 }}>
-                    {e ? <Action label="Swap" onPress={() => edit(swapDay(plan, date, recipes, prefs, house, newSeed()))} /> : null}
-                    <Action label={choosing ? 'Hide list' : 'Choose'} onPress={() => { setChoosing((v) => !v); setShowAll(false); }} />
-                    {e ? (
-                      <Action
-                        label={e.locked ? 'Unkeep' : 'Keep'}
-                        onPress={() => edit({ ...plan, entries: plan.entries.map((x) => (x.date === date ? { ...x, locked: !x.locked } : x)) })}
-                      />
-                    ) : null}
-                    {e ? <Action label="Clear" onPress={() => edit(clearDay(plan, date))} /> : null}
-                    {e ? <Action label="Recipe" onPress={() => router.push(`/recipe/${e.recipeId}`)} /> : null}
+                <View style={{ marginLeft: 62, marginBottom: 10 }}>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 22 }}>
+                    {e ? <Action label="Replace" onPress={() => edit(swapDay(plan, date, recipes, prefs.kinds, house, newSeed()))} /> : null}
+                    <Action label={choosing ? 'Hide list' : 'Pick one'} onPress={() => { setChoosing((v) => !v); setShowAll(false); }} />
+                    {e ? <Action label="See recipe" onPress={() => router.push(`/recipe/${e.recipeId}`)} /> : null}
                   </View>
-
                   {choosing ? (
                     <View style={{ marginTop: 4 }}>
-                      {listed.map((x) => (
-                        <Pressable key={x.id} onPress={() => edit(setDay(plan, date, x, house))} style={{ paddingVertical: 8 }}>
-                          <Text numberOfLines={1} style={{ fontFamily: fonts.body, fontSize: 14.5, color: c.inkSoft }}>
-                            {x.name}
-                          </Text>
+                      {choices.map((x) => (
+                        <Pressable key={x.id} onPress={() => edit(setDay(plan, date, x, house))} style={{ paddingVertical: 9 }}>
+                          <Text numberOfLines={1} style={{ fontFamily: fonts.body, fontSize: 15, color: c.inkSoft }}>{x.name}</Text>
                         </Pressable>
                       ))}
-                      {!showAll && recipes.length > listed.length + 1 ? (
-                        <Action label={`All ${recipes.length} recipes`} onPress={() => setShowAll(true)} />
-                      ) : null}
+                      {!showAll ? <Action label={`All ${recipes.length} recipes`} onPress={() => setShowAll(true)} /> : null}
                     </View>
                   ) : null}
                 </View>
@@ -468,9 +397,7 @@ export default function PlanScreen() {
           paddingTop: insets.top + 14, paddingHorizontal: PAD, paddingBottom: 8,
         }}
       >
-        <Text style={{ fontFamily: fonts.display, fontSize: 34, color: c.ink, letterSpacing: -0.5 }}>
-          {step === 'setup' ? 'Plan' : 'Dinners'}
-        </Text>
+        <Text style={{ fontFamily: fonts.display, fontSize: 34, color: c.ink, letterSpacing: -0.5 }}>Plan</Text>
         <Pressable
           onPress={() => navigation.dispatch({ type: 'OPEN_DRAWER' })}
           hitSlop={14}
@@ -486,43 +413,45 @@ export default function PlanScreen() {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: PAD, paddingBottom: insets.bottom + 150 }}
+        contentContainerStyle={{ paddingHorizontal: PAD, paddingBottom: insets.bottom + 160 }}
         showsVerticalScrollIndicator={false}
       >
-        {step === 'setup' ? setup : review}
+        {busy ? (
+          <View style={{ alignItems: 'center', marginTop: 60, gap: 14 }}>
+            <ActivityIndicator color={c.nut} size="large" />
+            <Text style={{ fontFamily: fonts.semi, fontSize: 15, color: c.ink }}>{busy}</Text>
+          </View>
+        ) : step === 'setup' ? setup : review}
       </ScrollView>
 
-      <View
-        style={{
-          position: 'absolute', left: 0, right: 0, bottom: 0,
-          paddingBottom: insets.bottom + 14, paddingTop: 12, paddingHorizontal: PAD,
-          alignItems: 'center', backgroundColor: c.surface, borderTopWidth: 1, borderTopColor: c.line,
-        }}
-      >
-        <Pressable
-          onPress={step === 'setup' ? build : saveAndShop}
-          disabled={busy || (step === 'review' && !plan?.entries.length)}
+      {!busy ? (
+        <View
           style={{
-            backgroundColor: c.nut, paddingVertical: 15, borderRadius: 8, alignSelf: 'stretch', alignItems: 'center',
-            opacity: busy || (step === 'review' && !plan?.entries.length) ? 0.6 : 1,
+            position: 'absolute', left: 0, right: 0, bottom: 0,
+            paddingBottom: insets.bottom + 14, paddingTop: 12, paddingHorizontal: PAD,
+            alignItems: 'center', backgroundColor: c.surface, borderTopWidth: 1, borderTopColor: c.line,
           }}
         >
-          {busy ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
+          <Pressable
+            onPress={step === 'setup' ? makePlan : confirm}
+            disabled={step === 'review' && !plan?.entries.length}
+            style={{
+              backgroundColor: c.nut, paddingVertical: 16, borderRadius: 8, alignSelf: 'stretch', alignItems: 'center',
+              opacity: step === 'review' && !plan?.entries.length ? 0.6 : 1,
+            }}
+          >
             <Text style={{ fontFamily: fonts.bold, fontSize: 15, color: '#fff', letterSpacing: 1 }}>
-              {step === 'setup' ? 'BUILD MY PLAN' : dirty ? 'SAVE & MAKE GROCERY LIST' : 'REMAKE GROCERY LIST'}
+              {step === 'setup' ? 'MAKE MY PLAN' : dirty ? 'LOOKS GOOD — MAKE GROCERY LIST' : 'OPEN GROCERY LIST'}
             </Text>
-          )}
-        </Pressable>
-
-        {step === 'review' ? (
-          <View style={{ flexDirection: 'row', gap: 28, marginTop: 8 }}>
-            <Action label="Shuffle" onPress={shuffle} />
-            <Action label={dirty ? 'Settings' : 'New plan'} onPress={() => { setStep('setup'); setOpen(null); }} />
-          </View>
-        ) : null}
-      </View>
+          </Pressable>
+          {step === 'review' ? (
+            <View style={{ flexDirection: 'row', gap: 30, marginTop: 8 }}>
+              <Action label="Shuffle all" onPress={shuffle} />
+              <Action label="Start over" onPress={() => { setStep('setup'); setOpen(null); setNote(null); }} />
+            </View>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }

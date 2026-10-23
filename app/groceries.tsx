@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { View, Text, Pressable, ScrollView, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, Share } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useNavigation } from 'expo-router';
 import {
@@ -9,7 +9,7 @@ import {
 } from '../lib/db';
 import { AISLES } from '../lib/grocery';
 import { toISODate, addDays, daysBetween } from '../lib/planner';
-import { groceriesFromPlan, groceriesFromSelection, getPlanRange, type Selection, type PlanRange } from '../lib/shop';
+import { groceriesFromPlan, groceriesFromSelection, getPlanRange, meijerListText, type Selection, type PlanRange } from '../lib/shop';
 import { useTheme } from '../theme/ThemeProvider';
 
 /**
@@ -176,7 +176,7 @@ export default function Groceries() {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: PAD, paddingBottom: insets.bottom + 110 }}
+        contentContainerStyle={{ paddingHorizontal: PAD, paddingBottom: insets.bottom + 150 }}
         showsVerticalScrollIndicator={false}
       >
         {weeks > 1 ? (
@@ -225,6 +225,11 @@ export default function Groceries() {
         {byAisle.map((group) => (
           <View key={group.aisle}>
             <Label>{group.aisle}</Label>
+            {group.aisle === 'Check the pantry' ? (
+              <Text style={{ fontFamily: fonts.body, fontSize: 12, color: c.inkFaint, marginTop: -2, marginBottom: 4 }}>
+                Staples from Preferences — probably already have them. Not sent to Meijer.
+              </Text>
+            ) : null}
             {group.lines.map((item) => (
               <View key={item.id} style={{ flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 11, gap: 12 }}>
                 <Pressable onPress={() => toggle(item)} hitSlop={8} style={{ paddingTop: 2 }}>
@@ -361,15 +366,31 @@ export default function Groceries() {
           alignItems: 'center', backgroundColor: c.surface,
         }}
       >
-        <Pressable
-          onPress={() => fromPlan()}
-          disabled={busy}
-          style={{ backgroundColor: c.nut, paddingVertical: 16, paddingHorizontal: 40, borderRadius: 8, opacity: busy ? 0.6 : 1 }}
-        >
-          <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: '#fff', letterSpacing: 1.1 }}>
-            {items.length ? 'REBUILD FROM PLAN' : 'BUILD FROM PLAN'}
-          </Text>
-        </Pressable>
+        {items.length ? (
+          <>
+            {/* The list as text, for the Meijer cart script on the laptop —
+                share it to yourself (Quick Share, Gmail, Keep) and run
+                `node tools/meijer-cart.mjs`. See tools/meijer-cart.mjs. */}
+            <Pressable
+              onPress={() => Share.share({ message: meijerListText(items), title: 'Meijer list' }).catch(() => {})}
+              disabled={busy}
+              style={{ backgroundColor: c.nut, paddingVertical: 16, alignSelf: 'stretch', alignItems: 'center', borderRadius: 8, opacity: busy ? 0.6 : 1 }}
+            >
+              <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: '#fff', letterSpacing: 1.1 }}>SEND TO MEIJER</Text>
+            </Pressable>
+            <Pressable onPress={() => fromPlan()} disabled={busy} hitSlop={8} style={{ marginTop: 10 }}>
+              <Text style={{ fontFamily: fonts.semi, fontSize: 13.5, color: c.nut }}>Rebuild from plan</Text>
+            </Pressable>
+          </>
+        ) : (
+          <Pressable
+            onPress={() => fromPlan()}
+            disabled={busy}
+            style={{ backgroundColor: c.nut, paddingVertical: 16, paddingHorizontal: 40, borderRadius: 8, opacity: busy ? 0.6 : 1 }}
+          >
+            <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: '#fff', letterSpacing: 1.1 }}>BUILD FROM PLAN</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );

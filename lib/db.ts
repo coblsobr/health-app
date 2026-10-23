@@ -231,6 +231,8 @@ async function openAndMigrate() {
     sodium_mg: 'INTEGER',
     nutrition_source: 'TEXT',
   });
+  // What to type into a shop's search box — the recipes' own wording.
+  await ensureColumns(db, 'grocery_items', { search: 'TEXT' });
 
   return db;
 }
@@ -506,12 +508,13 @@ export type GroceryItem = {
   source: string;
   item_key: string | null;
   recipes: string | null;
+  search: string | null;
 };
 
 export async function listGrocery(): Promise<GroceryItem[]> {
   const db = await ready();
   return db.getAllAsync<GroceryItem>(
-    `SELECT id, name, aisle, qty_text, is_purchased, source, item_key, recipes
+    `SELECT id, name, aisle, qty_text, is_purchased, source, item_key, recipes, search
        FROM grocery_items
       WHERE user_id = ? AND deleted_at IS NULL
       ORDER BY is_purchased, name`,
@@ -563,7 +566,7 @@ export async function clearPurchasedGrocery() {
  * already half done.
  */
 export async function replacePlanGrocery(
-  lines: { key: string; name: string; aisle: string; display: string; recipes: string[] }[]
+  lines: { key: string; name: string; aisle: string; display: string; recipes: string[]; search?: string }[]
 ) {
   const db = await ready();
   const ts = now();
@@ -584,10 +587,10 @@ export async function replacePlanGrocery(
     for (const l of lines) {
       await db.runAsync(
         `INSERT INTO grocery_items
-           (id, user_id, name, aisle, qty_text, is_purchased, source, item_key, recipes, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,'plan',?,?,?,?)`,
+           (id, user_id, name, aisle, qty_text, is_purchased, source, item_key, recipes, search, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,'plan',?,?,?,?,?)`,
         [uid(), LOCAL_USER, l.name, l.aisle, l.display,
-         wasPurchased.get(l.key) ?? 0, l.key, l.recipes.join(', '), ts, ts]
+         wasPurchased.get(l.key) ?? 0, l.key, l.recipes.join(', '), l.search ?? null, ts, ts]
       );
     }
   });

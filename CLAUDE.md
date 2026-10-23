@@ -174,14 +174,31 @@ Other things the fixtures caught:
 ## Meal planning
 
 `lib/planner.ts` + `lib/kinds.ts` are pure and tested (`node
---experimental-strip-types planner.test.mts`, 54 assertions). `app/plan.tsx`
-is the flow: setup → review (swap / choose / keep / clear any night, shuffle
-the rest) → **one button saves the plan and makes the grocery list**.
+--experimental-strip-types planner.test.mts`, 79 assertions). `app/plan.tsx`
+is the flow.
 
-The brief, in the user's words: build a week, 2 weeks or a month; 2.5 servings
-a meal (two adults and a one-year-old) plus lunch leftovers every day, so at
-least 5 servings a night, a bit more is fine; a recipe marked monthly must be
-in the monthly plan; preferences for what kind of meals, or "do it for me".
+**The Plan screen asks exactly three things** — how many meals, over how many
+days (5 / 7 / 14), and "Just mine" or "Mix in something new" — then "Happy
+with these?" (Replace / Pick one / See recipe per meal), then one button saves
+and makes the grocery list. The user asked for that and nothing more:
+*"simple options … anything else is a saved option ahead of time"*. **Do not
+add controls to it.** Everything else lives on **Preferences**
+(`app/preferences.tsx`, `lib/prefs.ts` pure + `lib/preferences.ts` storage):
+adults, little ones (half a portion), lunch leftovers, a spare dinner, meal
+kinds, ingredient swaps, pantry staples. Saved as changed, no Save button.
+
+- **N meals over D days** (`meals` in `buildPlan`, `cookDates`): cook days are
+  spread (3 in 7 → days 0, 2, 5) and each cook makes `perMeal × (1 + lunch +
+  spare dinner)` — 2 adults + a toddler with lunch leftovers = 5. Without
+  `meals`, every night is cooked (the old behaviour, still tested).
+- "Same protein twice running" compares neighbouring *cook days*, not
+  calendar neighbours.
+- "Mix in something new" fetches ~1 in 3 meals through `lib/discover.ts`,
+  saves them to the library tagged "Found online", and puts them on the last
+  non-rhythm cook days with reason `new`.
+
+The older brief (still true): 2.5 servings a meal plus lunch leftovers; a
+recipe marked monthly must be in the monthly plan; "do it for me".
 
 - **Every day is filled.** The earlier version left non-cadence days open and
   asked what to do with them via counters. That was the thing that was not
@@ -268,7 +285,47 @@ Re-probe before adding one. Other things this cost:
 - Failures are normal, not errors: a round-up post has no recipe markup. It
   tries `count * 4` candidates and only speaks up if nothing worked.
 
+## Meijer cart — `tools/meijer-cart.mjs`, `tools/meijer-lib.mjs`
+
+Groceries → **SEND TO MEIJER** shares the list as text (`meijerListText`:
+`qty | search | label`, pantry and ticked items left out). On the laptop,
+`node tools/meijer-cart.mjs` reads it from the clipboard, a recent .txt in
+Downloads, or a paste; searches meijer.com for each line; adds the best match
+to the pickup cart; and leaves the cart open. **It never checks out**, and it
+never handles a password — the user signs in once in its Chrome profile
+(`~/.meijer-cart/profile`, separate from everyday Chrome).
+`meijer.test.mts` covers the parsing and picking, every case from a live run.
+
+- **Start Chrome normally and attach over CDP.** Launching Chrome *through*
+  Playwright sets automation flags, and Meijer's Akamai answered the second
+  run with a 403 "Access Denied". Attached, `navigator.webdriver` is false and
+  it was never blocked again. Pause 1.5–3 s between items.
+- **No `npm run meijer` script**: `package.json` scripts are part of the
+  runtime fingerprint, so adding one demanded a new APK. Playwright as a
+  devDependency does not.
+- Selectors, from the live site: `article[data-testid="product-card"]`; add
+  is `button[data-testid="quantity-input-add-to-cart"]` whose aria-label is
+  "Add <name> to Cart" (the name source — link text is empty); after adding,
+  `quantity-input-update-quantity` / `quantity-input-increment`. The add call
+  is `api.meijer.com/…/shoppingcart/…/add/<id>`. Cart page `/shopping/cart`.
+- **A click before the page hydrates does nothing** — wait ~1 s and retry
+  once; "in cart" on the card also counts as success.
+- **Picking** (`pickProduct`): ≥75% of the searched words in the name, else
+  nothing (vegan parmesan must not become vegan mozzarella); minus ads,
+  snacks (chickpeas → "Chickpea Snacks"), non-food ("baby cornstarch bath
+  powder"), dried/ground when "fresh" was asked, organic unless asked; plus
+  Meijer brand. `SAME` maps chickpea → garbanzo. Picks are remembered in
+  `~/.meijer-cart/picks.json`, which is how a wrong one gets corrected.
+- Quantity: a bare count when there is one (3 cans of black beans), else 1;
+  herbs are always 1 ("4" basil is four leaves).
+
 ## Groceries — `app/groceries.tsx`, `lib/shop.ts`
+
+Swaps from Preferences are applied to ingredient lines before the list is
+built; pantry staples go to a last "Check the pantry" aisle. Each line keeps a
+`search` phrase — the recipes' own words ("cherry tomatoes"), not the USDA
+name ("Tomatoes, red") — for the Meijer search. Amounts round **up to
+something you can buy** (`shopAmount`): counts to whole, small measures to ¼.
 
 Plan → list lives in `lib/shop.ts` because two screens have the button. A plan
 longer than a week offers "Whole plan / Week 1 / Week 2…" chips — a month of
@@ -474,6 +531,21 @@ Matching rules learned the hard way, each from a wrong answer:
   says "flour" means wheat rather than carob or soy.
 - **Parse fractions before leading integers.** "1/2" parsed as 1 for a while,
   silently doubling every fractional ingredient.
+
+- **Soup, sauce and gravy are dishes, not filing categories** — exempting them
+  from the extra-word penalty made "tomatoes" match "Soup, tomato" and
+  "mushrooms" "Gravy, mushroom". Only spice/leavening/snack-style categories
+  are exempt.
+- **"leaves" is a count noun.** singular("leaves") is "leave", which matched
+  "Taro leaves" for basil, bay, thyme and kale — merging them into one line.
+- **Water matches nothing** ("Water convolvulus" was winning it), and
+  plant-based products ("vegan", "Quorn", "Impossible") are deliberately left
+  unmatched — USDA has none, and "vegan cream" is not "Cheese, cream".
+- An unmatched phrase gets a second try with packaging stripped
+  (`searchPhrase`): "-ounce cans chickpeas" → chickpeas.
+- **Check matcher changes against the real library**: snapshot every phrase
+  in the Paprika export before and after, and read the diff. Every alias
+  added this way came from a wrong answer in that diff.
 
 Benchmark: Love & Lemons lentil soup publishes 264 cal/serving; we estimate
 281 (+6%). Re-check that after any scoring change.

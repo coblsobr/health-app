@@ -1,13 +1,15 @@
 import {
   buildPlan, timesInPlan, scaleFor, servingsPerCook, setDay, swapDay, clearDay,
-  summarise, repeatGap, addDays, daysBetween,
+  summarise, repeatGap, addDays, daysBetween, cookDates, householdFrom,
   type PlanRecipe, type Household, type Prefs,
 } from './lib/planner.ts';
 import { inferKinds } from './lib/kinds.ts';
 
 let pass = 0;
 let fail = 0;
-const check = (name: string, cond: boolean, detail = '') => {
+const eq3 = (name: string, got: unknown, want: unknown) =>
+  check(name, JSON.stringify(got) === JSON.stringify(want), `got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+function check(name: string, cond: boolean, detail = '') {
   if (cond) { pass++; console.log('  ok  ', name); }
   else { fail++; console.log('  FAIL', name, detail && '\n        ' + detail); }
 };
@@ -209,6 +211,43 @@ console.log('\n════════ not dinner ════════\n');
       .entries.some((e) => e.recipeId === 'muffins');
   }
   check('unless asked for', seen);
+}
+
+console.log('\n════════ a few meals a week ════════\n');
+{
+  eq3('3 meals in 7 days are spread out', cookDates(START, 7, 3), [START, addDays(START, 2), addDays(START, 5)]);
+  eq3('no meal count means every night', cookDates(START, 7).length, 7);
+  eq3('more meals than days is every night', cookDates(START, 7, 9).length, 7);
+
+  // Two adults and a toddler, leftovers for lunch: 2.5 x 2 = 5 a cook.
+  const fam = householdFrom({ adults: 2, kids: 1, leftoverLunch: true, extraDinner: false });
+  eq3('the family is 2.5 a meal', fam.perMeal, 2.5);
+  eq3('with lunch leftovers, 5 a cook', servingsPerCook(fam), 5);
+  const spare = householdFrom({ adults: 2, kids: 1, leftoverLunch: true, extraDinner: true });
+  eq3('with a spare dinner too, 7.5 a cook', servingsPerCook(spare), 7.5);
+
+  const p = buildPlan(LIBRARY, { start: START, days: 7, meals: 3, house: fam, prefs: {}, seed: 4 });
+  eq3('3 meals planned', p.entries.length, 3);
+  eq3('on the cook days', p.entries.map((e) => e.date), cookDates(START, 7, 3));
+  check('three different recipes', new Set(p.entries.map((e) => e.recipeId)).size === 3);
+  check('each makes at least 5', p.entries.every((e) => e.servingsMade >= 5), p.entries.map((e) => e.servingsMade).join(' '));
+
+  // A weekly rhythm still lands once in a 3-meal week.
+  const lib = [...LIBRARY, recipe({ id: 'tacos', cadenceDays: 7 })];
+  const t = buildPlan(lib, { start: START, days: 7, meals: 3, house: fam, prefs: {}, seed: 9 });
+  eq3('weekly tacos are in a 3-meal week once', t.entries.filter((e) => e.recipeId === 'tacos').length, 1);
+  eq3('and still only 3 meals', t.entries.length, 3);
+
+  // Neighbouring cook days avoid the same protein, as neighbouring nights do.
+  let runs = 0;
+  const byId = new Map(LIBRARY.map((r) => [r.id, r]));
+  for (let s2 = 0; s2 < 20; s2++) {
+    const q = buildPlan(LIBRARY, { start: START, days: 7, meals: 3, house: fam, prefs: {}, seed: s2 });
+    for (let i = 1; i < q.entries.length; i++) {
+      if (byId.get(q.entries[i].recipeId)!.kinds[0] === byId.get(q.entries[i - 1].recipeId)!.kinds[0]) runs++;
+    }
+  }
+  check('back-to-back cook days rarely share a protein', runs <= 6, `${runs} in 40 pairs`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

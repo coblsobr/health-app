@@ -230,8 +230,10 @@ const tokens = (s: string) =>
  * So identity spans the first two segments, and the taxonomy words below are
  * not counted against a candidate that carries them.
  */
+// Not soup, sauce or gravy: those are dishes, not filing categories. Exempting
+// them let "tomatoes" match "Soup, tomato" and "mushrooms" "Gravy, mushroom".
 const TAXONOMY = new Set([
-  'spice', 'leavening', 'agent', 'soup', 'sauce', 'gravy', 'snack', 'beverage',
+  'spice', 'leavening', 'agent', 'snack', 'beverage',
   'babyfood', 'cereal', 'grain', 'pasta', 'product', 'food', 'meal', 'entree',
   'formulated', 'bar', 'supplement',
 ]);
@@ -258,7 +260,9 @@ const INDEX = FOODS.map((f) => {
  * Words that describe an amount or a cut, not the food. "4 garlic cloves" has
  * head noun "clove", which is not a food — step back to the real noun.
  */
-const COUNT_NOUNS = new Set(['clove', 'slice', 'piece', 'stalk', 'sprig', 'head', 'can', 'sheet', 'bunch', 'stick']);
+const COUNT_NOUNS = new Set(['clove', 'slice', 'piece', 'stalk', 'sprig', 'head', 'can', 'sheet', 'bunch', 'stick', 'leaf', 'leave', 'jar', 'package', 'bag', 'box', 'carton', 'container']);
+// 'leave' because singular("leaves") is "leave" — without it basil, bay, thyme
+// and kale leaves all matched "Taro leaves" and merged into one grocery line.
 
 /** Common to thousands of entries, so matching one says almost nothing. */
 const WEAK = new Set(['raw', 'cooked', 'fresh', 'dried', 'canned', 'frozen', 'prepared', 'unprepared', 'with', 'without', 'and', 'or', 'all', 'type', 'commercially', 'home']);
@@ -290,6 +294,28 @@ const ALIASES: [RegExp, string][] = [
   [/^baking powder$/, 'Leavening agents, baking powder, double-acting, straight phosphate'],
   [/^baking soda$/, 'Leavening agents, baking soda'],
   [/^butter$/, 'Butter, salted'],
+  // Plain tomatoes are red and ripe; scoring alone picks green ones.
+  [/^(?!.*(?:sun|paste|sauce|soup|juice|green))[a-z -]*tomato(?:es)?$/, 'Tomatoes, red, ripe, raw, year round average'],
+  [/^(?:fresh |white |button |cremini |crimini |baby bella |sliced )*mushrooms?$/, 'Mushrooms, white, raw'],
+  [/^(?:rolled |old[- ]fashioned |quick |quick[- ]cooking )?oats$/, "Oats (Includes foods for USDA's Food Distribution Program)"],
+  [/flour tortillas?$/, 'Tortillas, ready-to-bake or -fry, flour, refrigerated'],
+  [/(?:corn) tortillas?$/, 'Tortillas, ready-to-bake or -fry, corn'],
+  [/^(?:rotisserie |shredded |cooked )?chicken$/, 'Chicken, broilers or fryers, meat only, raw'],
+  [/(?:lasagna|lasagne) noodles?$/, 'Pasta, dry, enriched'],
+  // "freshly ground pepper" came out as "Emu, ground".
+  [/^(?:freshly |fresh )?(?:ground |cracked )?(?:black )?pepper(?: ground)?$/, 'Spices, pepper, black'],
+  [/chicken thighs?(?: boneless)?(?: skinless)?$|^(?:boneless |skinless )+chicken thighs?$/, 'Chicken, broilers or fryers, dark meat, thigh, meat only, raw'],
+  // Low-sodium soy is left to scoring, which finds the reduced-sodium entry.
+  [/^(?!.*(?:low|less|reduced))[a-z -]*(?:soy|tamari)(?: sauce)?$/, 'Soy sauce made from soy and wheat (shoyu)'],
+  [/^(?:canned )?(?:chickpeas|garbanzo beans?)$/, 'Chickpeas (garbanzo beans, bengal gram), mature seeds, raw'],
+  [/^(?:unsalted butter|butter unsalted)$/, 'Butter, without salt'],
+  [/^pepper ?jack(?: cheese)?$/, 'Cheese, monterey'],
+  [/sweet potato(?:es)?$/, 'Sweet potato, cooked, baked in skin, flesh, without salt'],
+  // Nothing in USDA is this; better unmatched than "Pie crust".
+  [/pizza (?:crust|dough)$/, ''],
+  [/flank steak$/, 'Beef, New Zealand, imported, flank, separable lean only, raw'],
+  // USDA has no plant-based products; "vegan cream" is not "Cheese, cream".
+  [/\b(?:vegan|plant[- ]based|dairy[- ]free|meatless|quorn|impossible|beyond)\b/, ''],
 ];
 
 const BY_NAME = new Map(FOODS.map((f) => [f.n.toLowerCase(), f]));
@@ -299,9 +325,12 @@ const ZERO_FOODS = /^(?:water|ice|cold water|warm water|boiling water)$/;
 
 export function matchFood(foodPhrase: string): FoodEntry | null {
   const phrase = foodPhrase.trim().toLowerCase();
+  // Water is not shopping and not nutrition; "Water convolvulus" was winning it.
+  if (ZERO_FOODS.test(phrase) || /(?:^|\s)water$/.test(phrase)) return null;
 
   for (const [re, target] of ALIASES) {
     if (re.test(phrase)) {
+      if (!target) return null;
       const hit = BY_NAME.get(target.toLowerCase());
       if (hit) return hit;
     }
@@ -338,7 +367,7 @@ export function matchFood(foodPhrase: string): FoodEntry | null {
     // cooking"). Penalising both equally either lets fish broth win or throws
     // olive oil away.
     for (const t of cand.head) {
-      if (wantSet.has(t) || WEAK.has(t) || TAXONOMY.has(t)) continue;
+      if (wantSet.has(t) || WEAK.has(t) || TAXONOMY.has(t) || COUNT_NOUNS.has(t)) continue;
       score -= 3.5;
     }
     for (const t of cand.all) {

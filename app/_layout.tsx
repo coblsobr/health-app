@@ -29,6 +29,7 @@ const SECTIONS: { route: string; label: string; icon: IconName }[] = [
   { route: 'recipes', label: 'Recipes', icon: 'library' },
   { route: 'plan', label: 'Plan', icon: 'calendar' },
   { route: 'groceries', label: 'Groceries', icon: 'cart' },
+  { route: 'preferences', label: 'Preferences', icon: 'person' },
 ];
 
 const EXTRAS: { route: string; label: string; icon: IconName }[] = [
@@ -106,6 +107,7 @@ function Root() {
         <Drawer.Screen name="recipes" options={{ title: 'Recipes' }} />
         <Drawer.Screen name="plan" options={{ title: 'Plan' }} />
         <Drawer.Screen name="groceries" options={{ title: 'Groceries' }} />
+        <Drawer.Screen name="preferences" options={{ title: 'Preferences' }} />
         <Drawer.Screen name="discover" options={{ drawerItemStyle: { display: 'none' } }} />
         {/* The old nutrition tabs still hold the grocery list and diary; they
             are reachable but no longer in the drawer while the planner is

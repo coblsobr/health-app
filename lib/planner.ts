@@ -51,7 +51,18 @@ export type Household = {
   perMeal: number;
   /** Cook enough at dinner to cover the next day's lunch as well. */
   leftoverLunch: boolean;
+  /** …and another whole dinner on top, for cooking fewer nights a week. */
+  extraDinner?: boolean;
 };
+
+/** Who eats, as saved in Preferences. A child eats about half an adult portion. */
+export type People = { adults: number; kids: number; leftoverLunch: boolean; extraDinner: boolean };
+
+export const DEFAULT_PEOPLE: People = { adults: 2, kids: 1, leftoverLunch: true, extraDinner: false };
+
+export function householdFrom(p: People): Household {
+  return { perMeal: p.adults + p.kids * 0.5, leftoverLunch: p.leftoverLunch, extraDinner: p.extraDinner };
+}
 
 /** Per kind: lean towards it, or leave it out. Absent means no opinion. */
 export type Prefs = Partial<Record<MealKind, 'more' | 'skip'>>;
@@ -64,7 +75,7 @@ export type PlanEntry = {
   scale: number;
   servingsMade: number;
   /** Why it landed here — shown so the plan can be argued with. */
-  reason: 'rhythm' | 'pick' | 'chosen';
+  reason: 'rhythm' | 'pick' | 'chosen' | 'new';
   /** Kept through a shuffle. Anything chosen by hand is locked. */
   locked: boolean;
 };
@@ -72,6 +83,8 @@ export type PlanEntry = {
 export type Plan = {
   start: string;
   days: number;
+  /** The nights there is cooking. Every night, unless a meal count was asked for. */
+  slots?: string[];
   entries: PlanEntry[];
   /** Dates nothing could fill. */
   openDates: string[];
@@ -111,9 +124,22 @@ export function datesFrom(start: string, days: number): string[] {
 
 /* ── how much to cook ───────────────────────────────────────── */
 
-/** Servings one dinner has to yield: tonight, plus tomorrow's lunch. */
+/** Servings one cook has to yield: tonight, plus tomorrow's lunch, plus a spare dinner. */
 export function servingsPerCook(house: Household): number {
-  return house.perMeal * (house.leftoverLunch ? 2 : 1);
+  return house.perMeal * (1 + (house.leftoverLunch ? 1 : 0) + (house.extraDinner ? 1 : 0));
+}
+
+/**
+ * Which days to cook, for a number of meals over a number of days — spread
+ * out rather than front-loaded, so leftovers have room. 3 meals in 7 days
+ * lands on days 0, 2 and 5.
+ */
+export function cookDates(start: string, days: number, meals?: number): string[] {
+  const all = datesFrom(start, days);
+  if (!meals || meals >= days) return all;
+  const out: string[] = [];
+  for (let i = 0; i < Math.max(1, meals); i++) out.push(all[Math.round((i * days) / meals)]);
+  return [...new Set(out)];
 }
 
 /**
@@ -233,11 +259,12 @@ export function candidatesFor(
   minGap: number
 ): { r: PlanRecipe; score: number }[] {
   const byId = new Map(recipes.map((r) => [r.id, r]));
-  const neighbour = (n: number) => {
-    const e = plan.get(addDays(date, n));
-    return e ? mainProtein(byId.get(e.recipeId)?.kinds ?? []) : null;
-  };
-  const around = [neighbour(-1), neighbour(1)];
+  // The meals either side — the next night, or the next cook day when only a
+  // few meals are planned.
+  const others = [...plan.values()].filter((e) => e.date !== date).sort((a, b) => a.date.localeCompare(b.date));
+  const before = others.filter((e) => e.date < date).pop();
+  const after = others.find((e) => e.date > date);
+  const around = [before, after].map((e) => (e ? mainProtein(byId.get(e.recipeId)?.kinds ?? []) : null));
 
   return eligible(recipes, prefs)
     .map((r) => {
@@ -277,10 +304,12 @@ export type BuildOptions = {
   seed: number;
   /** Entries to keep exactly where they are. */
   keep?: PlanEntry[];
+  /** Cook this many meals over the days, rather than every night. */
+  meals?: number;
 };
 
 export function buildPlan(recipes: PlanRecipe[], o: BuildOptions): Plan {
-  const dates = datesFrom(o.start, o.days);
+  const dates = cookDates(o.start, o.days, o.meals);
   const inRange = new Set(dates);
   const taken = new Map<string, PlanEntry>();
   const rand = rng(o.seed);
@@ -305,7 +334,9 @@ export function buildPlan(recipes: PlanRecipe[], o: BuildOptions): Plan {
     if (first < 0 || first >= interval) first = Math.floor(rand() * interval);
 
     for (let i = 0; i < n; i++) {
-      const slot = nearestFree(dates, taken, Math.round(first + i * interval));
+      // Day offset → the nearest cook day, when only some days are cooked.
+      const at = Math.min(dates.length - 1, Math.floor(((first + i * interval) * dates.length) / o.days));
+      const slot = nearestFree(dates, taken, at);
       if (!slot) break;
       taken.set(slot, entryFor(slot, r, o.house, 'rhythm'));
     }
@@ -324,6 +355,7 @@ export function buildPlan(recipes: PlanRecipe[], o: BuildOptions): Plan {
   return {
     start: o.start,
     days: o.days,
+    slots: dates,
     entries: dates.filter((d) => taken.has(d)).map((d) => taken.get(d)!),
     openDates,
   };

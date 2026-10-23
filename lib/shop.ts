@@ -2,6 +2,8 @@ import {
   listPlan, getIngredientsFor, replacePlanGrocery, setSetting, getSetting,
 } from './db';
 import { buildGroceryList, servingsByRecipe } from './grocery';
+import { applySwaps, inPantry } from './prefs';
+import { loadPreferences } from './preferences';
 
 /**
  * Plan → shopping list, in one place, because two screens have the button:
@@ -32,17 +34,22 @@ export async function groceriesFromSelection(sel: Selection[]): Promise<string |
     await replacePlanGrocery([]);
     return null;
   }
-  const details = await getIngredientsFor(sel.map((s) => s.id));
+  const [details, prefs] = await Promise.all([getIngredientsFor(sel.map((s) => s.id)), loadPreferences()]);
   const planned = sel.flatMap((s) => {
     const d = details.get(s.id);
     if (!d || d.lines.length === 0) return [];
     return [{
-      recipeId: s.id, name: d.name, recipeServings: d.servings,
-      neededServings: s.servings, ingredientLines: d.lines,
+      recipeId: s.id, name: d.name, recipeServings: d.servings, neededServings: s.servings,
+      // Swaps from Preferences ("chicken → Quorn chik'n") change what is bought,
+      // not the recipe.
+      ingredientLines: d.lines.map((l) => applySwaps(l, prefs.swaps)),
     }];
   });
   if (planned.length === 0) return 'Those recipes have no ingredients recorded yet.';
-  await replacePlanGrocery(buildGroceryList(planned));
+  const lines = buildGroceryList(planned).map((l) =>
+    inPantry(l, prefs.pantry) ? { ...l, aisle: 'Check the pantry' as const } : l
+  );
+  await replacePlanGrocery(lines);
   return null;
 }
 
@@ -59,4 +66,27 @@ export async function groceriesFromPlan(from: string, to: string): Promise<{ sel
   }));
   const note = await groceriesFromSelection(selection);
   return { selection, note };
+}
+
+/* ── Meijer ─────────────────────────────────────────────────── */
+
+/**
+ * The list as text for the Meijer cart script (tools/meijer-cart.mjs), one
+ * item a line: `qty | what to search | what the list called it`. Ticked items
+ * and the pantry are left out — the cart is for what still needs buying.
+ *
+ * Quantity is how many to add: a bare count ("3" avocados) when there is one,
+ * otherwise 1 — "2 cups spinach" is one bag, and the cart is easier to
+ * adjust than to guess.
+ */
+export function meijerListText(items: { name: string; qty_text: string | null; search: string | null; aisle: string; is_purchased: number }[]): string {
+  const want = items.filter((i) => !i.is_purchased && i.aisle !== 'Check the pantry');
+  const lines = want.map((i) => {
+    // "4" basil means four leaves, not four packs: herbs are always one.
+    const herb = /basil|cilantro|coriander|parsley|mint|thyme|rosemary|sage|dill|oregano|chive|leaves?\b/i.test(`${i.name} ${i.search ?? ''}`);
+    const n = !herb && i.qty_text && /^\d+$/.test(i.qty_text.trim()) ? Math.min(6, parseInt(i.qty_text, 10)) : 1;
+    const search = (i.search || i.name).replace(/\|/g, ' ');
+    return `${n} | ${search} | ${i.name.replace(/\|/g, ' ')}${i.qty_text ? ` (${i.qty_text})` : ''}`;
+  });
+  return [`MEIJER LIST · ${want.length} items`, ...lines].join('\n');
 }
