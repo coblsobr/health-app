@@ -1,9 +1,9 @@
 import {
   buildPlan, timesInPlan, scaleFor, servingsPerCook, setDay, swapDay, clearDay,
-  summarise, repeatGap, addDays, daysBetween, cookDates, householdFrom,
+  summarise, repeatGap, addDays, daysBetween, cookDates, householdFrom, allowedRecipe,
   type PlanRecipe, type Household, type Prefs,
 } from './lib/planner.ts';
-import { inferKinds } from './lib/kinds.ts';
+import { inferKinds, meatStatus } from './lib/kinds.ts';
 
 let pass = 0;
 let fail = 0;
@@ -168,7 +168,8 @@ console.log('\n════════ meal kinds ════════\n');
     inferKinds({ name, ingredients, tags, minutes });
   check('chicken from the name', k('Chicken tortilla soup').includes('Chicken'));
   check('and it is a soup', k('Chicken tortilla soup').includes('Soup & stew'));
-  check('name beats garnish', !k('Chicken tortilla soup', ['4 slices bacon']).includes('Pork'));
+  check('name beats garnish', !k('Chicken tortilla soup', ['1 lb chicken breasts', '4 slices bacon']).includes('Pork'));
+  check('a name the ingredients do not back up is not trusted', k("Copycat P.F. Chang's Chicken Lettuce Wraps", ['1 lb. chikn crumbles', 'lettuce']).join() === 'Vegetarian', k("Copycat P.F. Chang's Chicken Lettuce Wraps", ['1 lb. chikn crumbles', 'lettuce']).join());
   check('protein from ingredients', k('Weeknight skillet', ['1 lb ground beef', '1 onion']).includes('Beef'));
   check('chicken stock is not chicken',
     k('Lentil soup', ['1 cup lentils', '4 cups chicken stock']).includes('Vegetarian'));
@@ -248,6 +249,64 @@ console.log('\n════════ a few meals a week ═══════
     }
   }
   check('back-to-back cook days rarely share a protein', runs <= 6, `${runs} in 40 pairs`);
+}
+
+console.log('\n════════ preferences hold everywhere ════════\n');
+{
+  // The bug: "Mix in something new" brought prawns to someone who said no
+  // seafood. A blog recipe whose name does not say so, prawns in the list.
+  const blog = {
+    name: 'Garlic Butter Linguine',
+    ingredients: ['12 oz linguine', '1 lb large prawns, peeled', '4 tbsp butter', '4 cloves garlic'],
+  };
+  const noSeafood: Prefs = { Seafood: 'skip' };
+  const kinds = inferKinds({ ...blog, tags: [], minutes: null });
+  check('prawns in the ingredients make it seafood', kinds.includes('Seafood'), kinds.join());
+  check('and "no seafood" turns it away', !allowedRecipe({ kinds, meat: meatStatus(blog) }, noSeafood));
+  for (const word of ['squid', 'calamari', 'scampi', 'oysters', 'trout']) {
+    check(`${word} is seafood`, inferKinds({ name: `${word} dinner`, ingredients: [], tags: [], minutes: null }).includes('Seafood'));
+  }
+
+  // Preferences beat rhythms: a monthly shrimp dish stays out.
+  const lib = [...LIBRARY, recipe({ id: 'shrimp', cadenceDays: 30, kinds: ['Seafood'] })];
+  const p = buildPlan(lib, { start: START, days: 30, house: HOUSE, prefs: noSeafood, seed: 3 });
+  check('a monthly seafood recipe is not planned under "no seafood"', !p.entries.some((e) => e.recipeId === 'shrimp'));
+}
+
+console.log('\n════════ mostly vegetarian ════════\n');
+{
+  const m = (name: string, ingredients: string[] = []) => meatStatus({ name, ingredients });
+  check('no meat is none', m('Lentil soup', ['1 cup lentils', '4 cups chicken broth']) === 'none');
+  check('ground beef swaps', m('Taco Lasagna', ['1 lb ground beef', '9 tortillas']) === 'swappable');
+  check('diced chicken swaps', m('Curry', ['2 lb chicken thighs, boneless, cut into bite-size pieces']) === 'swappable');
+  check('chicken tenderloins swap', m('Strips', ['1 lb chicken tenderloins']) === 'swappable');
+  check('bacon and sausage swap', m('Pasta', ['4 slices bacon', '1 lb Italian sausage']) === 'swappable');
+  check('flank steak does not', m('Mongolian Beef', ['1 pound flank steak, thinly sliced']) === 'fixed');
+  check('wings do not', m('Wings', ['2 lb chicken wings']) === 'fixed');
+  check('seafood does not', m('Shrimp tacos', ['1 lb shrimp']) === 'fixed');
+  check("Quorn chik'n is no meat at all", m('Bowl', ["1 package Quorn chik'n filet"]) === 'none');
+  check('Vegan Sesame Chicken is vegetarian', inferKinds({ name: 'Vegan Sesame Chicken', ingredients: ['1 block tofu'], tags: [], minutes: null }).includes('Vegetarian'));
+
+  const veg: Prefs = { diet: 'mostlyVeg' };
+  const lib = [
+    ...Array.from({ length: 8 }, (_, i) => recipe({ id: `veg${i}`, kinds: ['Vegetarian'], meat: 'none' })),
+    ...Array.from({ length: 8 }, (_, i) => recipe({ id: `swap${i}`, kinds: ['Chicken'], meat: 'swappable' })),
+    ...Array.from({ length: 8 }, (_, i) => recipe({ id: `steak${i}`, kinds: ['Beef'], meat: 'fixed' })),
+  ];
+  let vegCount = 0;
+  let swapCount = 0;
+  let steak = 0;
+  for (let s2 = 0; s2 < 20; s2++) {
+    const q = buildPlan(lib, { start: START, days: 7, meals: 3, house: HOUSE, prefs: veg, seed: s2 });
+    for (const e of q.entries) {
+      if (e.recipeId.startsWith('veg')) vegCount++;
+      else if (e.recipeId.startsWith('swap')) swapCount++;
+      else steak++;
+    }
+  }
+  check('steak never makes a mostly-vegetarian plan', steak === 0, `${steak}`);
+  check('swappable meat still can', swapCount > 0, `${swapCount}`);
+  check('vegetarian is most of it', vegCount > swapCount * 1.5, `${vegCount} veg vs ${swapCount} swappable`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

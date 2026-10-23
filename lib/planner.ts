@@ -21,7 +21,7 @@
  * Pure and dateless beyond ISO strings, so it can be tested in node.
  */
 
-import type { MealKind } from './kinds';
+import type { MealKind, MeatStatus } from './kinds';
 
 /** Mirrors NOT_DINNER in kinds.ts — kept here so the import stays type-only. */
 const NOT_DINNER: MealKind[] = ['Breakfast', 'Sweets & baking', 'Drinks', 'Sauces & dressings'];
@@ -44,6 +44,8 @@ export type PlanRecipe = {
   /** ISO date it was last cooked, or null for never. */
   lastMade: string | null;
   kinds: MealKind[];
+  /** For "mostly vegetarian". Unknown counts as allowed. */
+  meat?: MeatStatus;
 };
 
 export type Household = {
@@ -65,7 +67,14 @@ export function householdFrom(p: People): Household {
 }
 
 /** Per kind: lean towards it, or leave it out. Absent means no opinion. */
-export type Prefs = Partial<Record<MealKind, 'more' | 'skip'>>;
+export type Diet = 'any' | 'mostlyVeg';
+
+/**
+ * Per kind: lean towards it, or leave it out. Absent means no opinion. Plus
+ * the diet: "mostly vegetarian" prefers meat-free recipes and allows only
+ * meat that the grocery list can swap for a stand-in.
+ */
+export type Prefs = Partial<Record<MealKind, 'more' | 'skip'>> & { diet?: Diet };
 
 export type PlanEntry = {
   date: string;
@@ -218,11 +227,25 @@ function nearestFree(dates: string[], taken: Map<string, PlanEntry>, target: num
  * sweets, drinks and dressings are out unless asked for.
  */
 export function eligible(recipes: PlanRecipe[], prefs: Prefs): PlanRecipe[] {
-  return recipes.filter(
-    (r) =>
-      (r.rating == null || r.rating > 3) &&
-      !r.kinds.some((k) => prefs[k] === 'skip') &&
-      !r.kinds.some((k) => NOT_DINNER.includes(k) && prefs[k] !== 'more')
+  return recipes.filter((r) => (r.rating == null || r.rating > 3) && allowedRecipe(r, prefs));
+}
+
+/** Kinds and diet together — the whole Preferences check for one recipe. */
+export function allowedRecipe(r: { kinds: MealKind[]; meat?: MeatStatus }, prefs: Prefs): boolean {
+  if (prefs.diet === 'mostlyVeg' && r.meat === 'fixed') return false;
+  return allowedKinds(r.kinds, prefs);
+}
+
+/**
+ * Do these kinds pass Preferences? The one rule for every recipe that can
+ * reach a plan — the library's, and ones found online. "Mix in something new"
+ * once skipped this and put prawns in front of someone who had said no
+ * seafood.
+ */
+export function allowedKinds(kinds: MealKind[], prefs: Prefs): boolean {
+  return (
+    !kinds.some((k) => prefs[k] === 'skip') &&
+    !kinds.some((k) => NOT_DINNER.includes(k) && prefs[k] !== 'more')
   );
 }
 
@@ -235,6 +258,8 @@ function appeal(r: PlanRecipe, prefs: Prefs): number {
   let w = (r.rating ?? 7) / 10;
   if (r.favorite) w *= 1.5;
   if (r.kinds.some((k) => prefs[k] === 'more')) w *= 3;
+  // "Mostly": meat-free recipes about three times as often as swappable ones.
+  if (prefs.diet === 'mostlyVeg' && r.meat === 'none') w *= 3;
   return w;
 }
 
@@ -318,7 +343,8 @@ export function buildPlan(recipes: PlanRecipe[], o: BuildOptions): Plan {
 
   // Rhythms, most frequent first: a weekly recipe has the least room to move.
   const withRhythm = recipes
-    .filter((r) => r.cadenceDays && r.cadenceDays > 0)
+    // Preferences beat rhythms: "no seafood" means a monthly shrimp dish too.
+    .filter((r) => r.cadenceDays && r.cadenceDays > 0 && allowedRecipe(r, o.prefs))
     .sort((a, b) => (a.cadenceDays as number) - (b.cadenceDays as number));
 
   for (const r of withRhythm) {

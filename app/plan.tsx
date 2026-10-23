@@ -7,11 +7,11 @@ import {
   type PlannerRow, type RecipeInput,
 } from '../lib/db';
 import {
-  buildPlan, setDay, swapDay, candidatesFor, servingsPerCook, householdFrom, cookDates,
+  buildPlan, setDay, swapDay, allowedRecipe, candidatesFor, servingsPerCook, householdFrom, cookDates,
   toISODate, fromISODate, addDays, cadenceLabel,
   type Plan, type PlanRecipe,
 } from '../lib/planner';
-import { inferKinds } from '../lib/kinds';
+import { inferKinds, meatStatus } from '../lib/kinds';
 import { describePeople, DEFAULT_PREFERENCES, type Preferences } from '../lib/prefs';
 import { loadPreferences } from '../lib/preferences';
 import { groceriesFromPlan, setPlanRange } from '../lib/shop';
@@ -127,6 +127,7 @@ export default function PlanScreen() {
         tags: r.tags ? r.tags.split('\n') : [],
         minutes: r.minutes,
       }),
+      meat: meatStatus({ name: r.name, ingredients: r.ingredients ? r.ingredients.split('\n') : [] }),
     }));
 
   const recipes = useMemo(() => toPlanRecipes(rows), [rows]);
@@ -139,6 +140,16 @@ export default function PlanScreen() {
     const have = await listSourceUrls().catch(() => []);
     const report = await discover(SOURCES.filter((s) => s.standard).map((s) => s.id), count, have, {
       onProgress: (done, total) => setBusy(`Finding new recipes… ${done + 1} of ${total}`),
+      // The same Preferences check the library gets: "no seafood" means no
+      // prawns from a food blog either.
+      accept: (r) =>
+        allowedRecipe(
+          {
+            kinds: inferKinds({ name: r.name, ingredients: r.ingredients, tags: r.tags, minutes: (r.prepMin ?? 0) + (r.cookMin ?? 0) || null }),
+            meat: meatStatus({ name: r.name, ingredients: r.ingredients }),
+          },
+          prefs.kinds
+        ),
     });
     const ids: string[] = [];
     for (const f of report.found) {
@@ -300,7 +311,7 @@ export default function PlanScreen() {
       <View style={{ height: 1, backgroundColor: c.line, marginTop: 28 }} />
       <Pressable onPress={() => router.push('/preferences' as never)} style={{ paddingVertical: 14 }}>
         <Text style={{ fontFamily: fonts.body, fontSize: 13.5, color: c.inkSoft, lineHeight: 20 }}>
-          {describePeople(prefs.people)} — each meal makes{' '}
+          {describePeople(prefs.people, prefs.kinds.diet)} — each meal makes{' '}
           <Text style={{ fontFamily: fonts.semi, color: c.ink }}>{perCook}+ servings</Text>.
           {prefs.swaps.length ? ` ${prefs.swaps.length} swap${prefs.swaps.length === 1 ? '' : 's'} on.` : ''}{' '}
           <Text style={{ color: c.nut, fontFamily: fonts.semi }}>Preferences</Text>

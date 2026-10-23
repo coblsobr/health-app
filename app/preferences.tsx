@@ -3,7 +3,7 @@ import { View, Text, Pressable, ScrollView, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from 'expo-router';
 import { loadPreferences, savePreferences } from '../lib/preferences';
-import { DEFAULT_PREFERENCES, DEFAULT_PANTRY, describePeople, type Preferences } from '../lib/prefs';
+import { DEFAULT_PREFERENCES, DEFAULT_PANTRY, VEG_SWAPS, describePeople, type Preferences } from '../lib/prefs';
 import { householdFrom, servingsPerCook } from '../lib/planner';
 import { KINDS, NOT_DINNER, type MealKind } from '../lib/kinds';
 import { useTheme } from '../theme/ThemeProvider';
@@ -153,6 +153,23 @@ export default function PreferencesScreen() {
           Set these once. Planning a week then only asks how many meals.
         </Text>
 
+        <Label>Diet</Label>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <Chip label="Anything" on={p.kinds.diet !== 'mostlyVeg'} onPress={() => update({ ...p, kinds: { ...p.kinds, diet: 'any' } })} />
+          <Chip label="Mostly vegetarian" on={p.kinds.diet === 'mostlyVeg'} onPress={() => update({ ...p, kinds: { ...p.kinds, diet: 'mostlyVeg' } })} />
+        </View>
+        {p.kinds.diet === 'mostlyVeg' ? (
+          <Hint>
+            Vegetarian recipes come first. A recipe with ground beef, crumbles, meatballs, sausage, bacon or
+            boneless chicken can still be planned — the grocery list buys a vegetarian stand-in instead:{' '}
+            {VEG_SWAPS.filter((s) => !/broth|stock|bouillon/.test(s.from))
+              .filter((s) => !p.swaps.some((m) => m.from.toLowerCase() === s.from))
+              .map((s) => `${s.from} → ${s.to}`).join(', ')}
+            . Steak, roasts, wings and seafood are left out. Add a swap below to buy a specific brand instead
+            (e.g. chicken → Quorn chik'n).
+          </Hint>
+        ) : null}
+
         <Label>Who's eating</Label>
         <Stepper label="Adults" value={p.people.adults} set={(n) => people({ adults: n })} min={1} />
         <View style={{ height: 1, backgroundColor: c.line }} />
@@ -162,7 +179,7 @@ export default function PreferencesScreen() {
         <Check on={p.people.leftoverLunch} label="Enough for the next day's lunch" onPress={() => people({ leftoverLunch: !p.people.leftoverLunch })} />
         <Check on={p.people.extraDinner} label="Enough for a second dinner too" onPress={() => people({ extraDinner: !p.people.extraDinner })} />
         <Hint>
-          {describePeople(p.people)}. Each meal makes at least{' '}
+          {describePeople(p.people, p.kinds.diet)}. Each meal makes at least{' '}
           <Text style={{ fontFamily: fonts.semi, color: c.ink }}>{perCook} servings</Text>, scaled up in half-batch steps.
         </Hint>
 

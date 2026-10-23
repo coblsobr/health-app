@@ -65,15 +65,59 @@ export function readPreferences(raw: {
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Apply swaps to one ingredient line. The longest rule wins and only one rule
- * applies, so "chicken broth → vegetable broth" beats "chicken → Quorn", and
- * a swap's own output is never swapped again.
+ * The stand-ins "mostly vegetarian" buys, for the meat lib/kinds.ts calls
+ * swappable. Broth and stock come first in effect (longest rule wins), so
+ * "chicken broth" becomes vegetable broth, not plant-based chicken. A swap of
+ * the user's own with the same "from" replaces the one here.
+ */
+export const VEG_SWAPS: Swap[] = [
+  { from: 'chicken broth', to: 'vegetable broth' },
+  { from: 'chicken stock', to: 'vegetable stock' },
+  { from: 'beef broth', to: 'vegetable broth' },
+  { from: 'chicken bouillon', to: 'vegetable bouillon' },
+  { from: 'ground beef', to: 'veggie crumbles' },
+  { from: 'ground turkey', to: 'veggie crumbles' },
+  { from: 'ground chicken', to: 'veggie crumbles' },
+  { from: 'beef crumbles', to: 'veggie crumbles' },
+  { from: 'meatballs', to: 'veggie meatballs' },
+  { from: 'chicken', to: 'plant-based chicken' },
+  { from: 'sausage', to: 'veggie sausage' },
+  { from: 'chorizo', to: 'soy chorizo' },
+  { from: 'bacon', to: 'veggie bacon' },
+];
+
+/** The swaps actually applied: yours, plus the diet's where you have not said otherwise. */
+export function effectiveSwaps(p: Pick<Preferences, 'swaps' | 'kinds'>): Swap[] {
+  if (p.kinds.diet !== 'mostlyVeg') return p.swaps;
+  const mine = new Set(p.swaps.map((s) => s.from.trim().toLowerCase()));
+  return [...p.swaps, ...VEG_SWAPS.filter((s) => !mine.has(s.from))];
+}
+
+/** Already a stand-in — mirrors MEAT_FREE in lib/kinds.ts (kept here so node tests can import this file). */
+const MEAT_FREE = /\b(vegan|vegetarian|veggie|plant[- ]based|meatless|meat[- ]free|quorn|impossible|beyond|gardein|morningstar|tofurky|fake|faux|chik['’]?n)\b/i;
+
+/** The amount at the start of a line: "1 lb", "2", "1 (12 oz) package", "4 cups". */
+const AMOUNT = /^\s*(?:[\d½¼¾⅓⅔⅛⅜⅝⅞]+(?:[\s./-]+[\d½¼¾⅓⅔⅛⅜⅝⅞]+)*\s*(?:\([^)]*\)\s*)?(?:(?:lbs?|pounds?|oz|ounces?|cups?|g|grams?|kg|packages?|pkgs?|cans?|tbsps?|tsps?|tablespoons?|teaspoons?|slices?|links?|strips?)\.?\s+)?)?/i;
+
+/**
+ * Apply swaps to one ingredient line. The longest rule wins and only one
+ * applies, so "chicken broth → vegetable broth" beats "chicken → Quorn".
+ *
+ * The amount is kept and the rest of the line becomes the stand-in: "1 lb
+ * boneless skinless chicken breasts, diced" → "1 lb plant-based chicken".
+ * Replacing only the word gave "1 lb boneless skinless plant-based chicken
+ * breasts", which no shop's search box understands. A line that is already a
+ * stand-in ("fake bacon") is left alone.
  */
 export function applySwaps(line: string, swaps: Swap[]): string {
+  if (MEAT_FREE.test(line) && !swaps.some((s) => MEAT_FREE.test(s.from))) return line;
   const rules = [...swaps].filter((s) => s.from.trim()).sort((a, b) => b.from.length - a.from.length);
   for (const r of rules) {
-    const re = new RegExp(`\\b${escape(r.from.trim())}\\b`, 'i');
-    if (re.test(line)) return line.replace(re, r.to.trim());
+    const re = new RegExp(`\\b${escape(r.from.trim())}s?\\b`, 'i');
+    if (re.test(line)) {
+      const amount = line.match(AMOUNT)?.[0] ?? '';
+      return `${amount}${r.to.trim()}`.trim();
+    }
   }
   return line;
 }
@@ -95,7 +139,8 @@ export function inPantry(line: { name: string; search: string }, pantry: string[
 }
 
 /** Servings one cook makes, in words, for the Plan screen. */
-export function describePeople(p: People): string {
+export function describePeople(p: People, diet?: 'any' | 'mostlyVeg'): string {
+  if (diet === 'mostlyVeg') return `${describePeople(p)} · mostly vegetarian`;
   const who = [
     `${p.adults} adult${p.adults === 1 ? '' : 's'}`,
     p.kids ? `${p.kids} little one${p.kids === 1 ? '' : 's'}` : '',

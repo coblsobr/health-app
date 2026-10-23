@@ -1,4 +1,4 @@
-import { applySwaps, inPantry, readPreferences, describePeople, DEFAULT_PANTRY } from './lib/prefs.ts';
+import { applySwaps, effectiveSwaps, inPantry, readPreferences, describePeople, DEFAULT_PANTRY, VEG_SWAPS } from './lib/prefs.ts';
 
 let pass = 0;
 let fail = 0;
@@ -15,12 +15,29 @@ console.log('\n════════ swaps ════════\n');
     { from: 'chicken broth', to: 'vegetable broth' },
     { from: 'bacon', to: 'fake bacon' },
   ];
-  eq('a swap replaces the word', applySwaps('1 lb chicken thighs', swaps), "1 lb Quorn chik'n pieces thighs");
+  eq('a swap replaces the ingredient and keeps the amount', applySwaps('1 lb chicken thighs', swaps), "1 lb Quorn chik'n pieces");
   eq('the longer rule wins', applySwaps('4 cups chicken broth', swaps), '4 cups vegetable broth');
-  eq('case does not matter', applySwaps('2 Chicken breasts', swaps), "2 Quorn chik'n pieces breasts");
+  eq('case does not matter', applySwaps('2 Chicken breasts', swaps), "2 Quorn chik'n pieces");
+  eq('descriptions go with it', applySwaps('2 boneless skinless chicken breasts, diced', swaps), "2 Quorn chik'n pieces");
+  eq('a packaged amount is kept', applySwaps('1 (12 oz) package bacon', swaps), '1 (12 oz) package fake bacon');
   eq('only whole words', applySwaps('1 cup chickpeas', swaps), '1 cup chickpeas');
-  eq("a swap's output is not swapped again", applySwaps('4 slices bacon', [...swaps, { from: 'fake bacon', to: 'x' }]), '4 slices fake bacon');
+  eq('a line that is already a stand-in is left alone', applySwaps('4 slices fake bacon', swaps), '4 slices fake bacon');
+  eq("Quorn chik'n is not swapped for chicken", applySwaps("1 package Quorn chik'n filets", swaps), "1 package Quorn chik'n filets");
   eq('no swaps, no change', applySwaps('1 onion', []), '1 onion');
+}
+
+console.log('\n════════ mostly vegetarian ════════\n');
+{
+  const sw = effectiveSwaps({ swaps: [], kinds: { diet: 'mostlyVeg' } });
+  eq('ground beef becomes veggie crumbles', applySwaps('1 lb ground beef', sw), '1 lb veggie crumbles');
+  eq('diced chicken becomes plant-based chicken', applySwaps('1.5 lbs chicken breast, diced', sw), '1.5 lbs plant-based chicken');
+  eq('chicken broth becomes vegetable broth, not plant-based chicken', applySwaps('4 cups low-sodium chicken broth', sw), '4 cups vegetable broth');
+  eq('sausages become veggie sausage', applySwaps('4 Italian sausages', sw), '4 veggie sausage');
+  eq('vegetables are untouched', applySwaps('2 cups broccoli florets', sw), '2 cups broccoli florets');
+  eq('your own swap beats the built-in one',
+    applySwaps('1 lb chicken thighs', effectiveSwaps({ swaps: [{ from: 'chicken', to: "Quorn chik'n" }], kinds: { diet: 'mostlyVeg' } })), "1 lb Quorn chik'n");
+  eq('no built-in swaps when the diet is anything', effectiveSwaps({ swaps: [], kinds: {} }).length, 0);
+  eq('every built-in swap has a target', VEG_SWAPS.every((s) => s.to.trim().length > 0), true);
 }
 
 console.log('\n════════ pantry ════════\n');

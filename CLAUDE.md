@@ -174,7 +174,7 @@ Other things the fixtures caught:
 ## Meal planning
 
 `lib/planner.ts` + `lib/kinds.ts` are pure and tested (`node
---experimental-strip-types planner.test.mts`, 79 assertions). `app/plan.tsx`
+--experimental-strip-types planner.test.mts`, 101 assertions). `app/plan.tsx`
 is the flow.
 
 **The Plan screen asks exactly three things** — how many meals, over how many
@@ -196,6 +196,25 @@ kinds, ingredient swaps, pantry staples. Saved as changed, no Save button.
 - "Mix in something new" fetches ~1 in 3 meals through `lib/discover.ts`,
   saves them to the library tagged "Found online", and puts them on the last
   non-rhythm cook days with reason `new`.
+- **Preferences hold everywhere — `allowedRecipe` is the one check.** Online
+  finds go through it (`discover`'s `accept`), and so do rhythm recipes. It
+  once didn't, and a food blog's prawn linguine landed in front of a user who
+  had said no seafood. Never add a path into a plan that skips it.
+- **Mostly vegetarian** (`prefs.diet = 'mostlyVeg'`, Preferences → Diet):
+  `meatStatus` classes a recipe `none` / `swappable` (ground meat, crumbles,
+  meatballs, sausage, bacon, boneless chicken) / `fixed` (steak, roasts,
+  bone-in, lamb, seafood). Fixed is excluded, none is weighted ×3, and the
+  grocery list buys stand-ins via `VEG_SWAPS` (broth rules first, so chicken
+  broth → vegetable broth, not plant-based chicken). The user's own swap with
+  the same "from" replaces the built-in one. On the real library: 64 none, 32
+  swappable, 1 fixed (Mongolian beef — flank steak).
+- **Stand-ins are not meat.** `MEAT_FREE` ("vegan", "Quorn", "chik'n",
+  "plant-based"…) lines are ignored for protein, and a protein in the *name*
+  only counts if the ingredients back it up: "P.F. Chang's Chicken Lettuce
+  Wraps" made with chikn crumbles is vegetarian.
+- **A swap replaces the whole ingredient, keeping the amount**: "1 lb boneless
+  skinless chicken breasts, diced" → "1 lb plant-based chicken". Swapping just
+  the word gave lines no shop search could read.
 
 The older brief (still true): 2.5 servings a meal plus lunch leftovers; a
 recipe marked monthly must be in the monthly plan; "do it for me".

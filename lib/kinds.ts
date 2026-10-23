@@ -26,7 +26,7 @@ const PROTEIN_WORDS: [MealKind, RegExp][] = [
   ['Chicken', /\b(chicken|turkey)\b/],
   ['Beef', /\b(beef|steak|brisket|chuck|sirloin|meatballs?|burgers?)\b/],
   ['Pork', /\b(pork|bacon|ham|sausages?|chorizo|prosciutto|pancetta|carnitas)\b/],
-  ['Seafood', /\b(salmon|shrimp|prawns?|fish|cod|tuna|tilapia|scallops?|crab|halibut|mahi|lobster|mussels|clams)\b/],
+  ['Seafood', /\b(seafood|salmon|shrimps?|prawns?|scampi|fish|cod|tuna|tilapia|scallops?|crabs?|halibut|mahi|lobsters?|mussels|clams|oysters?|squid|calamari|octopus|crawfish|crayfish|sardines?|trout|snapper|swordfish|haddock|pollock|catfish|mackerel|anchov(?:y|ies))\b/],
 ];
 
 const DISH_WORDS: [MealKind, RegExp][] = [
@@ -49,6 +49,48 @@ const DISH_WORDS: [MealKind, RegExp][] = [
  */
 const NOT_A_PROTEIN = /\b(broth|stock|bouillon|base|fish sauce|anchov)/;
 
+/** Words that make "chicken" or "bacon" a vegetarian product. */
+const MEAT_FREE = /\b(vegan|vegetarian|veggie|plant[- ]based|meatless|meat[- ]free|quorn|impossible|beyond|gardein|morningstar|tofurky|fake|faux|chik['’]?n)\b/;
+
+/**
+ * How much meat a recipe has, for "mostly vegetarian".
+ *
+ *   'none'       — vegetarian already.
+ *   'swappable'  — only meat with an easy vegetarian stand-in: ground beef or
+ *                  turkey, crumbles, meatballs, sausage, bacon, and chicken
+ *                  that is diced, shredded or boneless. The grocery list
+ *                  buys the stand-in instead.
+ *   'fixed'      — meat the dish is built around: steak, roasts, chops,
+ *                  ribs, wings and drumsticks, lamb, ham, and all seafood.
+ *
+ * The user's words: "mostly vegetarian, but if it contains beef crumbles or
+ * diced chicken, I can replace it with a vegetarian equivalent".
+ */
+export type MeatStatus = 'none' | 'swappable' | 'fixed';
+
+const SEAFOOD = PROTEIN_WORDS.find(([k]) => k === 'Seafood')![1];
+const FIXED_CUT = /\b(steaks?|roast|brisket|ribs?|chops?|loin|tenderloin|wings?|drumsticks?|legs?|whole chicken|bone[- ]in|lamb|veal|ham|prosciutto|pancetta|duck|venison)\b/;
+const SWAPPABLE = /\b(ground (?:beef|turkey|chicken|pork)|crumbles|meatballs?|sausages?|chorizo|bacon|hot dogs?)\b/;
+const ANY_MEAT = /\b(beef|steak|chicken|turkey|pork|bacon|ham|sausages?|chorizo|lamb|veal|meatballs?|prosciutto|pancetta|duck|brisket|crumbles)\b/;
+
+export function meatStatus(r: { name: string; ingredients: string[] }): MeatStatus {
+  const lines = (r.ingredients.length ? r.ingredients : [r.name])
+    .map((l) => l.toLowerCase())
+    .filter((l) => !NOT_A_PROTEIN.test(l) && !MEAT_FREE.test(l));
+  let swappable = false;
+  for (const l of lines) {
+    if (SEAFOOD.test(l)) return 'fixed';
+    if (!ANY_MEAT.test(l)) continue;
+    // Boneless chicken in any form swaps; a bone-in cut does not. Chicken
+    // tenderloins are the boneless strips, not a "loin".
+    if (/\bchicken\b/.test(l) && !/\b(wings?|drumsticks?|legs?|whole|bone[- ]in|skin[- ]on)\b/.test(l)) { swappable = true; continue; }
+    if (SWAPPABLE.test(l)) { swappable = true; continue; }
+    if (FIXED_CUT.test(l) || /\b(beef|pork|lamb|veal|turkey|duck)\b/.test(l)) return 'fixed';
+    swappable = true;
+  }
+  return swappable ? 'swappable' : 'none';
+}
+
 export function inferKinds(r: {
   name: string;
   ingredients: string[];
@@ -56,13 +98,20 @@ export function inferKinds(r: {
   minutes: number | null;
 }): MealKind[] {
   const name = r.name.toLowerCase();
-  const lines = r.ingredients.map((l) => l.toLowerCase()).filter((l) => !NOT_A_PROTEIN.test(l));
+  // A stand-in is not the meat it stands in for: "Vegan Sesame Chicken" and
+  // "1 package Quorn chik'n" are vegetarian.
+  const lines = r.ingredients.map((l) => l.toLowerCase()).filter((l) => !NOT_A_PROTEIN.test(l) && !MEAT_FREE.test(l));
   const tags = r.tags.map((t) => t.toLowerCase());
   const out = new Set<MealKind>();
 
   // The name wins: "Chicken tortilla soup" is chicken even if it also lists
   // bacon for the garnish.
-  let proteins = PROTEIN_WORDS.filter(([, re]) => re.test(name)).map(([k]) => k);
+  let proteins = MEAT_FREE.test(name) ? [] : PROTEIN_WORDS.filter(([, re]) => re.test(name)).map(([k]) => k);
+  // …but only when the ingredients agree. "Copycat P.F. Chang's Chicken
+  // Lettuce Wraps" made with "1 lb chikn crumbles" is not chicken.
+  if (proteins.length && r.ingredients.length) {
+    proteins = proteins.filter((k) => lines.some((l) => PROTEIN_WORDS.find(([p]) => p === k)![1].test(l)));
+  }
   if (proteins.length === 0) {
     proteins = PROTEIN_WORDS.filter(([, re]) => lines.some((l) => re.test(l))).map(([k]) => k);
   }

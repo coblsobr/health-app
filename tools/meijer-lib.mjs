@@ -33,7 +33,7 @@ const STOP = new Set([
 ]);
 
 /** The same food under the shop's name. "Chickpeas" are sold as garbanzo beans. */
-const SAME = { chickpea: 'garbanzo', garbanzo: 'garbanzo', scallion: 'green onion', cilantro: 'cilantro', coriander: 'cilantro' };
+const SAME = { chickpea: 'garbanzo', garbanzo: 'garbanzo', scallion: 'green onion', cilantro: 'cilantro', coriander: 'cilantro', chick: 'chicken', crumble: 'crumbles' };
 
 /** In the results, never what a recipe meant. Baby cornstarch is bath powder. */
 const NOT_FOOD = /\b(bath|lotion|shampoo|soap|wipes|diaper|candle|detergent|cleaner|dog|cat|pet|toy|vitamin|supplement)\b/i;

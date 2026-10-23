@@ -204,7 +204,13 @@ export async function discover(
   sourceIds: string[],
   count: number,
   haveUrls: string[],
-  opts: { offset?: number; signal?: AbortSignal; onProgress?: (done: number, total: number) => void } = {}
+  opts: {
+    offset?: number;
+    signal?: AbortSignal;
+    onProgress?: (done: number, total: number) => void;
+    /** Only keep recipes this accepts — Preferences, so "no seafood" holds online too. */
+    accept?: (recipe: ParsedRecipe) => boolean;
+  } = {}
 ): Promise<DiscoverReport> {
   const chosen = SOURCES.filter((s) => sourceIds.includes(s.id));
   if (!chosen.length) return { found: [], failedSources: [], skipped: 0 };
@@ -224,7 +230,8 @@ export async function discover(
   );
 
   // Try more than asked for: some candidates will not parse.
-  const candidates = pickCandidates(perSource, haveUrls, count * 4, opts.offset ?? 0);
+  // More again when some will be turned away by preferences.
+  const candidates = pickCandidates(perSource, haveUrls, count * (opts.accept ? 8 : 4), opts.offset ?? 0);
 
   const found: Found[] = [];
   let skipped = 0;
@@ -233,7 +240,7 @@ export async function discover(
     opts.onProgress?.(found.length, count);
     try {
       const recipe = await importer()(cleanLink(cand.link));
-      if (!recipe.ingredients.length || !recipe.steps.length) {
+      if (!recipe.ingredients.length || !recipe.steps.length || (opts.accept && !opts.accept(recipe))) {
         skipped++;
         continue;
       }

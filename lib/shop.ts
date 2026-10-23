@@ -2,7 +2,7 @@ import {
   listPlan, getIngredientsFor, replacePlanGrocery, setSetting, getSetting,
 } from './db';
 import { buildGroceryList, servingsByRecipe } from './grocery';
-import { applySwaps, inPantry } from './prefs';
+import { applySwaps, effectiveSwaps, inPantry } from './prefs';
 import { loadPreferences } from './preferences';
 
 /**
@@ -35,6 +35,8 @@ export async function groceriesFromSelection(sel: Selection[]): Promise<string |
     return null;
   }
   const [details, prefs] = await Promise.all([getIngredientsFor(sel.map((s) => s.id)), loadPreferences()]);
+  // Yours, plus the stand-ins "mostly vegetarian" buys.
+  const swaps = effectiveSwaps(prefs);
   const planned = sel.flatMap((s) => {
     const d = details.get(s.id);
     if (!d || d.lines.length === 0) return [];
@@ -42,7 +44,7 @@ export async function groceriesFromSelection(sel: Selection[]): Promise<string |
       recipeId: s.id, name: d.name, recipeServings: d.servings, neededServings: s.servings,
       // Swaps from Preferences ("chicken → Quorn chik'n") change what is bought,
       // not the recipe.
-      ingredientLines: d.lines.map((l) => applySwaps(l, prefs.swaps)),
+      ingredientLines: d.lines.map((l) => applySwaps(l, swaps)),
     }];
   });
   if (planned.length === 0) return 'Those recipes have no ingredients recorded yet.';
