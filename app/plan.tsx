@@ -7,11 +7,11 @@ import {
   type PlannerRow, type RecipeInput,
 } from '../lib/db';
 import {
-  buildPlan, setDay, swapDay, allowedRecipe, candidatesFor, servingsPerCook, householdFrom, cookDates,
+  buildPlan, setDay, swapDay, swapSide, dropSide, addSides, sideCandidates, rng, allowedRecipe, candidatesFor, servingsPerCook, householdFrom, cookDates,
   toISODate, fromISODate, addDays, cadenceLabel,
   type Plan, type PlanRecipe,
 } from '../lib/planner';
-import { inferKinds, meatStatus } from '../lib/kinds';
+import { inferKinds, meatStatus, courseTags } from '../lib/kinds';
 import { describePeople, DEFAULT_PREFERENCES, type Preferences } from '../lib/prefs';
 import { loadPreferences } from '../lib/preferences';
 import { groceriesFromPlan, setPlanRange } from '../lib/shop';
@@ -170,7 +170,7 @@ export default function PlanScreen() {
         name: r.name, servings, prepMin: r.prepMin, cookMin: r.cookMin, sourceUrl: f.url,
         photoUri: r.imageUrl, notes: r.description, rating: null,
         ingredients: r.ingredients.map((text) => ({ text, isPrimary: false })),
-        steps: r.steps, tags: ['Found online'], nutrition,
+        steps: r.steps, tags: ['Found online', ...courseTags(r.tags)], nutrition,
       }));
     }
     return ids;
@@ -235,7 +235,10 @@ export default function PlanScreen() {
       const end = addDays(plan.start, plan.days - 1);
       await replacePlan(
         plan.start, end,
-        plan.entries.map((e) => ({ date: e.date, recipeId: e.recipeId, servings: e.servingsMade }))
+        plan.entries.flatMap((e) => [
+          { date: e.date, recipeId: e.recipeId, servings: e.servingsMade, slot: 'dinner' as const },
+          ...(e.side ? [{ date: e.date, recipeId: e.side.recipeId, servings: e.side.servingsMade, slot: 'side' as const }] : []),
+        ])
       );
       await setSetting('plan_current', JSON.stringify({ plan } satisfies Saved));
       await setPlanRange({ from: plan.start, to: end });
@@ -370,6 +373,11 @@ export default function PlanScreen() {
                       {tag ? <Text style={{ color: c.nut, fontFamily: fonts.semi }}>{`  ·  ${tag}`}</Text> : null}
                     </Text>
                   ) : null}
+                  {e?.side ? (
+                    <Text numberOfLines={1} style={{ fontFamily: fonts.body, fontSize: 13.5, color: c.inkSoft, marginTop: 4 }}>
+                      + {e.side.name}
+                    </Text>
+                  ) : null}
                 </View>
               </Pressable>
 
@@ -379,6 +387,18 @@ export default function PlanScreen() {
                     {e ? <Action label="Replace" onPress={() => edit(swapDay(plan, date, recipes, prefs.kinds, house, newSeed()))} /> : null}
                     <Action label={choosing ? 'Hide list' : 'Pick one'} onPress={() => { setChoosing((v) => !v); setShowAll(false); }} />
                     {e ? <Action label="See recipe" onPress={() => router.push(`/recipe/${e.recipeId}`)} /> : null}
+                    {e?.side ? <Action label="Swap side" onPress={() => edit(swapSide(plan, date, recipes, prefs.kinds, house, newSeed()))} /> : null}
+                    {e?.side ? <Action label="No side" onPress={() => edit(dropSide(plan, date))} /> : null}
+                    {e && !e.side && sideCandidates(recipes, prefs.kinds).length
+                      ? <Action
+                          label="Add a side"
+                          onPress={() => edit({
+                            ...plan,
+                            entries: plan.entries.map((x) =>
+                              x.date === date ? addSides({ ...plan, entries: [x] }, recipes, prefs.kinds, house, rng(newSeed())).entries[0] : x),
+                          })}
+                        />
+                      : null}
                   </View>
                   {choosing ? (
                     <View style={{ marginTop: 4 }}>

@@ -1,6 +1,6 @@
 import {
   buildPlan, timesInPlan, scaleFor, servingsPerCook, setDay, swapDay, clearDay,
-  summarise, repeatGap, addDays, daysBetween, cookDates, householdFrom, allowedRecipe,
+  summarise, repeatGap, addDays, daysBetween, cookDates, householdFrom, allowedRecipe, swapSide, dropSide,
   type PlanRecipe, type Household, type Prefs,
 } from './lib/planner.ts';
 import { inferKinds, meatStatus } from './lib/kinds.ts';
@@ -307,6 +307,56 @@ console.log('\n════════ mostly vegetarian ═══════�
   check('steak never makes a mostly-vegetarian plan', steak === 0, `${steak}`);
   check('swappable meat still can', swapCount > 0, `${swapCount}`);
   check('vegetarian is most of it', vegCount > swapCount * 1.5, `${vegCount} veg vs ${swapCount} swappable`);
+}
+
+console.log('\n════════ not a meal, and sides ════════\n');
+{
+  const k = (name: string, ingredients: string[] = ['1 cup something'], tags: string[] = []) => inferKinds({ name, ingredients, tags, minutes: null });
+  // From a real plan: "Mix in something new" brought hot honey as a dinner.
+  check('hot honey is a condiment', k('Hot Honey', ['1 cup honey', '2 tsp red pepper flakes']).includes('Sauces & dressings'));
+  check('hot honey chicken is a meal', !k('Hot Honey Chicken', ['2 lb chicken thighs', '½ cup honey']).includes('Sauces & dressings'));
+  check('honey garlic tofu is a meal', !k('Honey Garlic Tofu', ['1 block tofu', 'honey']).includes('Sauces & dressings'));
+  check("the site's Condiment course counts", k('Spicy Drizzle', ['honey'], ['Condiment']).includes('Sauces & dressings'));
+  check("the site's Main Course beats a salad name", !k('Big Salad', ['lettuce'], ['Main Course']).includes('Sides'));
+  check("the site's Side Dish counts", k('Cheesy Thing', ['cheddar'], ['Side Dish']).includes('Sides'));
+
+  // From the real library.
+  for (const name of ['Miso Roasted Carrots', 'Oven Roasted Vegetables', 'Cucumber Salad', 'Roasted Brussel Sprouts And Sweet Potatoes', 'Patatas Bravas with Two Sauces: Smoky Romesco and Garlic Aioli']) {
+    check(`${name} is a side`, k(name, ['1 lb vegetables', '2 tbsp olive oil']).includes('Sides'));
+  }
+  check('bacon on a broccoli salad is a garnish', k('Creamy Broccoli Salad', ['1 head broccoli', '4 slices bacon']).includes('Sides'));
+  check('a salad with chicken is a meal', !k('Chicken Caesar Salad', ['2 chicken breasts', 'romaine']).includes('Sides'));
+  check('beans and greens is a meal', !k('Mediterranean White Beans & Greens', ['2 cans white beans', 'kale']).includes('Sides'));
+  check('halloumi and broccolini is a meal', !k('Sheet-Pan Roasted Halloumi & Broccolini', ['8 oz halloumi', 'broccolini']).includes('Sides'));
+  check('a corn and pepper empanada is a meal', !k('Corn and Pepper Empanada with Avocado and Red Pepper Cream', ['corn', 'peppers', 'dough']).includes('Sides'));
+
+  const mains = Array.from({ length: 8 }, (_, i) => recipe({ id: `main${i}`, kinds: ['Vegetarian'] }));
+  const sides = Array.from({ length: 4 }, (_, i) => recipe({ id: `side${i}`, kinds: ['Vegetarian', 'Sides'] }));
+  const lib = [...mains, ...sides];
+
+  const plain = buildPlan(lib, { start: START, days: 7, meals: 3, house: HOUSE, prefs: {}, seed: 2 });
+  check('a side is never the meal', !plain.entries.some((e) => e.recipeId.startsWith('side')));
+  check('no sides unless asked', plain.entries.every((e) => !e.side));
+
+  const withSides = buildPlan(lib, { start: START, days: 7, meals: 3, house: HOUSE, prefs: { withSides: true }, seed: 2 });
+  check('every meal gets a side', withSides.entries.every((e) => e.side?.recipeId.startsWith('side')));
+  check('three different sides for three meals', new Set(withSides.entries.map((e) => e.side!.recipeId)).size === 3);
+  check('a side is made for the same people', withSides.entries.every((e) => e.side!.servingsMade >= servingsPerCook(HOUSE)));
+
+  const d = withSides.entries[0].date;
+  const swapped = swapSide(withSides, d, lib, { withSides: true }, HOUSE, 7);
+  check('swap side changes the side', swapped.entries[0].side!.recipeId !== withSides.entries[0].side!.recipeId);
+  check('and keeps the meal', swapped.entries[0].recipeId === withSides.entries[0].recipeId);
+  const changed = setDay(withSides, d, mains[7], HOUSE);
+  check('changing the meal keeps its side', changed.entries.find((e) => e.date === d)!.side?.recipeId === withSides.entries[0].side!.recipeId);
+  check('no side drops it', !dropSide(withSides, d).entries.find((e) => e.date === d)!.side);
+
+  const noSideRecipes = buildPlan(mains, { start: START, days: 7, meals: 3, house: HOUSE, prefs: { withSides: true }, seed: 2 });
+  check('no side recipes, no sides — and the meals still plan', noSideRecipes.entries.length === 3 && noSideRecipes.entries.every((e) => !e.side));
+
+  const seafoodSide = [...mains, recipe({ id: 'shrimpside', kinds: ['Seafood', 'Sides'] })];
+  const s2 = buildPlan(seafoodSide, { start: START, days: 7, meals: 3, house: HOUSE, prefs: { withSides: true, Seafood: 'skip' }, seed: 2 });
+  check('sides follow Preferences too', s2.entries.every((e) => !e.side));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -24,7 +24,7 @@
 import type { MealKind, MeatStatus } from './kinds';
 
 /** Mirrors NOT_DINNER in kinds.ts — kept here so the import stays type-only. */
-const NOT_DINNER: MealKind[] = ['Breakfast', 'Sweets & baking', 'Drinks', 'Sauces & dressings'];
+const NOT_DINNER: MealKind[] = ['Breakfast', 'Sweets & baking', 'Drinks', 'Sauces & dressings', 'Sides'];
 
 /** What is in the middle of the plate — two nights running is what to avoid. */
 const PROTEINS: MealKind[] = ['Chicken', 'Beef', 'Pork', 'Seafood', 'Vegetarian'];
@@ -74,7 +74,14 @@ export type Diet = 'any' | 'mostlyVeg';
  * the diet: "mostly vegetarian" prefers meat-free recipes and allows only
  * meat that the grocery list can swap for a stand-in.
  */
-export type Prefs = Partial<Record<MealKind, 'more' | 'skip'>> & { diet?: Diet };
+export type Prefs = Partial<Record<MealKind, 'more' | 'skip'>> & {
+  diet?: Diet;
+  /** Pair a side (a recipe of kind Sides) with every meal. */
+  withSides?: boolean;
+};
+
+/** A side dish cooked alongside a meal, scaled the same way. */
+export type SideEntry = { recipeId: string; name: string; scale: number; servingsMade: number };
 
 export type PlanEntry = {
   date: string;
@@ -87,6 +94,7 @@ export type PlanEntry = {
   reason: 'rhythm' | 'pick' | 'chosen' | 'new';
   /** Kept through a shuffle. Anything chosen by hand is locked. */
   locked: boolean;
+  side?: SideEntry;
 };
 
 export type Plan = {
@@ -378,13 +386,71 @@ export function buildPlan(recipes: PlanRecipe[], o: BuildOptions): Plan {
     else openDates.push(date);
   }
 
-  return {
+  const plan: Plan = {
     start: o.start,
     days: o.days,
     slots: dates,
     entries: dates.filter((d) => taken.has(d)).map((d) => taken.get(d)!),
     openDates,
   };
+  return o.prefs.withSides ? addSides(plan, recipes, o.prefs, o.house, rand) : plan;
+}
+
+/* ── sides ──────────────────────────────────────────────────── */
+
+/** Recipes that can go next to a meal: sides, passing the same Preferences check. */
+export function sideCandidates(recipes: PlanRecipe[], prefs: Prefs): PlanRecipe[] {
+  // A side is allowed even though "Sides" is not a dinner — that is the point.
+  const asSide: Prefs = { ...prefs, Sides: 'more' };
+  return recipes.filter(
+    (r) => r.kinds.includes('Sides') && (r.rating == null || r.rating > 3) && allowedRecipe(r, asSide)
+  );
+}
+
+function sideFor(r: PlanRecipe, house: Household): SideEntry {
+  const scale = scaleFor(servingsPerCook(house), r.servings);
+  return { recipeId: r.id, name: r.name, scale, servingsMade: round(scale * r.servings) };
+}
+
+/**
+ * Give every meal that has none a side, spreading the sides so the same one
+ * does not come round twice until all have had a turn. A meal keeps the side
+ * it already has, so a reshuffle of one meal does not change its side.
+ */
+export function addSides(plan: Plan, recipes: PlanRecipe[], prefs: Prefs, house: Household, rand: () => number = rng(1)): Plan {
+  const pool = sideCandidates(recipes, prefs);
+  if (!pool.length) return plan;
+  const used = new Map<string, number>();
+  for (const e of plan.entries) if (e.side) used.set(e.side.recipeId, (used.get(e.side.recipeId) ?? 0) + 1);
+  const entries = plan.entries.map((e) => {
+    if (e.side) return e;
+    const fewest = Math.min(...pool.map((r) => used.get(r.id) ?? 0));
+    const fresh = pool.filter((r) => (used.get(r.id) ?? 0) === fewest);
+    const total = fresh.reduce((n, r) => n + appeal(r, prefs), 0);
+    let x = rand() * total;
+    let pick = fresh[fresh.length - 1];
+    for (const r of fresh) { x -= appeal(r, prefs); if (x <= 0) { pick = r; break; } }
+    used.set(pick.id, (used.get(pick.id) ?? 0) + 1);
+    return { ...e, side: sideFor(pick, house) };
+  });
+  return { ...plan, entries };
+}
+
+/** A different side for one meal. */
+export function swapSide(plan: Plan, date: string, recipes: PlanRecipe[], prefs: Prefs, house: Household, seed: number): Plan {
+  const e = plan.entries.find((x) => x.date === date);
+  const pool = sideCandidates(recipes, prefs).filter((r) => r.id !== e?.side?.recipeId);
+  if (!e || !pool.length) return plan;
+  const elsewhere = new Set(plan.entries.filter((x) => x.date !== date).map((x) => x.side?.recipeId));
+  const prefer = pool.filter((r) => !elsewhere.has(r.id));
+  const from = prefer.length ? prefer : pool;
+  const pick = from[Math.floor(rng(seed)() * from.length)];
+  return { ...plan, entries: plan.entries.map((x) => (x.date === date ? { ...x, side: sideFor(pick, house) } : x)) };
+}
+
+/** Take the side off one meal. */
+export function dropSide(plan: Plan, date: string): Plan {
+  return { ...plan, entries: plan.entries.map((x) => (x.date === date ? { ...x, side: undefined } : x)) };
 }
 
 /**
@@ -416,8 +482,10 @@ function choose(
 
 /** Put a specific recipe on a date, locked. */
 export function setDay(plan: Plan, date: string, r: PlanRecipe, house: Household): Plan {
+  // Changing the meal keeps its side.
+  const side = plan.entries.find((e) => e.date === date)?.side;
   const entries = plan.entries.filter((e) => e.date !== date);
-  entries.push(entryFor(date, r, house, 'chosen', true));
+  entries.push({ ...entryFor(date, r, house, 'chosen', true), ...(side ? { side } : {}) });
   entries.sort((a, b) => a.date.localeCompare(b.date));
   return { ...plan, entries, openDates: plan.openDates.filter((d) => d !== date) };
 }

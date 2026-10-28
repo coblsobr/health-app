@@ -8,6 +8,7 @@ import { Icon } from '../../components/Icon';
 import { importFromUrl, type ParsedRecipe } from '../../lib/import';
 import { saveRecipe, type RecipeInput } from '../../lib/db';
 import { useTheme } from '../../theme/ThemeProvider';
+import { courseTags } from '../../lib/kinds';
 
 /** Map what the parser found onto the form's shape. */
 function toFormInput(p: ParsedRecipe): Partial<RecipeInput> {
@@ -24,9 +25,14 @@ function toFormInput(p: ParsedRecipe): Partial<RecipeInput> {
     steps: p.steps,
     // Keep only tags the form offers, so a selected chip always reflects what
     // was saved. Sites publish dozens of loose keywords; most are noise.
-    tags: ALL_TAGS.filter((t) =>
-      p.tags.some((raw) => raw.toLowerCase().replace(/[-_]/g, ' ') === t.toLowerCase())
-    ),
+    tags: [
+      ...ALL_TAGS.filter((t) =>
+        p.tags.some((raw) => raw.toLowerCase().replace(/[-_]/g, ' ') === t.toLowerCase())
+      ),
+      // The site's course ("Side Dish", "Condiment") tells the planner a side
+      // or a sauce from a dinner — kept even though the form shows no chip for it.
+      ...courseTags(p.tags),
+    ],
     nutrition: p.nutrition
       ? {
           kcal: p.nutrition.calories,

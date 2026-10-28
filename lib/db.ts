@@ -839,12 +839,13 @@ export async function markPastPlanMade(today: string): Promise<void> {
 export async function replacePlan(
   from: string,
   to: string,
-  entries: { date: string; recipeId: string; servings: number }[]
+  entries: { date: string; recipeId: string; servings: number; slot?: 'dinner' | 'side' }[]
 ): Promise<void> {
   const db = await ready();
   await db.withTransactionAsync(async () => {
+    // Sides are their own rows, so the grocery list counts them like any meal.
     await db.runAsync(
-      `DELETE FROM meal_plan_entries WHERE user_id = ? AND slot = 'dinner' AND date >= ? AND date <= ?`,
+      `DELETE FROM meal_plan_entries WHERE user_id = ? AND slot IN ('dinner', 'side') AND date >= ? AND date <= ?`,
       [LOCAL_USER, from, to]
     );
     for (const e of entries) {
@@ -852,8 +853,8 @@ export async function replacePlan(
       await db.runAsync(
         `INSERT INTO meal_plan_entries
            (id, user_id, date, slot, recipe_id, servings, is_leftover, batch_id, created_at, updated_at)
-         VALUES (?, ?, ?, 'dinner', ?, ?, 0, ?, ?, ?)`,
-        [uid(), LOCAL_USER, e.date, e.recipeId, e.servings, batchId, now(), now()]
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+        [uid(), LOCAL_USER, e.date, e.slot ?? 'dinner', e.recipeId, e.servings, batchId, now(), now()]
       );
     }
   });

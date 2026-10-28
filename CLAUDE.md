@@ -174,7 +174,7 @@ Other things the fixtures caught:
 ## Meal planning
 
 `lib/planner.ts` + `lib/kinds.ts` are pure and tested (`node
---experimental-strip-types planner.test.mts`, 101 assertions). `app/plan.tsx`
+--experimental-strip-types planner.test.mts`, 128 assertions). `app/plan.tsx`
 is the flow.
 
 **The Plan screen asks exactly three things** — how many meals, over how many
@@ -265,6 +265,21 @@ What the real export needed:
   qualified fat ("Saturated Fat") is never fat. No calories → estimator.
 - Rating 0–5 → ×2, and 0 is unrated. Categories become tags.
 - Duplicates (same link or same name) are skipped, so re-running is safe.
+
+**Sides and condiments.** "Mix in something new" once planned *Hot Honey* as a
+dinner. Condiment words now count at the end of a name (honey, butter, jam,
+pesto, seasoning, glaze… — "Honey Garlic Tofu" is not honey), and **the
+course a site publishes wins**: schema.org `recipeCategory` arrives in tags,
+and `courseTags` keeps "Condiment" / "Side Dish" / "Main Course" when a recipe
+is saved (online finds and Web import), since the form otherwise drops tags it
+has no chip for. A **Side** is named like one (salad, roasted vegetables,
+potatoes, rice… judged on the name before "with", not split at "and" — "Corn
+and Pepper Empanada" is a meal) **and has nothing filling** (meat other than
+bacon, beans, tofu, eggs, halloumi…). Real library: 9 sides. Sides are in
+`NOT_DINNER`, so never the meal; Preferences → "Add a side to each meal"
+(`prefs.withSides`) pairs one per meal (`addSides`, spread so none repeats
+before all have had a turn), saved as `slot = 'side'` rows so the grocery list
+counts them. `replacePlan` clears both slots.
 
 **Not-dinner kinds.** The library held muffins, cookies, a latte, a lassi and
 four dressings. `kinds.ts` infers Breakfast / Sweets & baking / Drinks /

@@ -183,6 +183,18 @@ export default function PreferencesScreen() {
           <Text style={{ fontFamily: fonts.semi, color: c.ink }}>{perCook} servings</Text>, scaled up in half-batch steps.
         </Hint>
 
+        <Label>Sides</Label>
+        <Check
+          on={!!p.kinds.withSides}
+          label="Add a side to each meal"
+          onPress={() => update({ ...p, kinds: { ...p.kinds, withSides: !p.kinds.withSides } })}
+        />
+        <Hint>
+          Picked from your recipes that are sides — salads, roasted vegetables, potatoes and the like,
+          with nothing filling in them. Sides are never planned as the meal itself. Each one is made in the
+          same amount as the meal and goes on the grocery list.
+        </Hint>
+
         <Label>Kinds of meals</Label>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           {KINDS.filter((k) => !NOT_DINNER.includes(k)).map((k) => (
